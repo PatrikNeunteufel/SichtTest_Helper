@@ -1,0 +1,653 @@
+# Konzept: Sichttest steuert die geprüfte Anwendung
+
+> **Stand:** 2026-10-08 · **Status:** abgestimmt mit LV, CS und CC (SichtTest_Session1), E1–E7
+> entschieden (§11); wartet auf Leerlauf aller und Patriks Freigabe — **nichts ist gebaut** ·
+> **Gehört:** SichtTest_Helper (Sync-Prefix SH) ·
+> **Ausgangspunkt:** `Idee_Steuerung_der_Anwendung.md` (bleibt verbindlich, bis dieses Konzept
+> freigegeben ist) · **Abstimmung:** Sync `…\Visuals_Project\cmake\sync_sichttest`
+
+## 1. Gesetzt (Patrik, 2026-10-08 — nicht neu verhandelt)
+
+1. Das Werkzeug wird in `SichtTest_Helper` entwickelt und gebaut und bleibt ein eigenes Programm.
+2. Der ganze Tester wird nicht als Bibliothek in die Anwendungen eingebunden.
+3. Dieses Projekt baut eine **DLL**, die die ganze Schnittstelle zur Steuerung bereitstellt. Die
+   Anwendungen (LumiViz, Comm Studio, spätere) binden sie ein; alle entwickeln getrennt weiter,
+   geprüft wird die Verträglichkeit über die Version.
+4. Absicht: auch im Comm Studio entfällt der eingebaute Tester (`TestProtokollWindow`).
+5. Gestartet wird im Projekt mit einem Argument der Anwendung (`<Anwendung>.exe --testing`).
+
+## 2. Die Teile und wer was besitzt
+
+```
+ Sichttest.exe (Qt, eigener Prozess)            Anwendung.exe --testing (ihr eigenes Qt)
+ ┌───────────────────────────────┐              ┌──────────────────────────────────────────┐
+ │ Listen, Bewertung, Log, Report│   Kanal      │ SichttestSteuerung1.dll  (kein Qt)        │
+ │ Aktionen einer Liste auslösen │◄────────────►│   Kanal, Rahmen, Warteschlange            │
+ │ lauscht (Server)              │ Protokoll P  │ ───────── C-Schnittstelle S ───────────── │
+ └───────────────────────────────┘              │ Kopf sichttest_steuerung.h (+ .hpp, Qt)   │
+                                                │   in der Anwendung übersetzt              │
+                                                │ Aktionen der Anwendung (Name → Funktion)  │
+                                                └──────────────────────────────────────────┘
+```
+
+| Teil | Gehört | Inhalt |
+|---|---|---|
+| `Sichttest.exe` | SH | wie heute; neu: Kanal (lauscht), Aktionen aus Listen, Anzeige des Handgriffs als Text |
+| `SichttestSteuerung<S>.dll` | SH | Kanal, Protokoll P, Warteschlange; **kein Qt, keine C++-Typen an der Grenze** |
+| `sichttest_steuerung.h` | SH | die C-Schnittstelle S (einzige verbindliche Grenze) |
+| `sichttest_steuerung.hpp` | SH | kleiner Kopf für C++: lädt die DLL zur Laufzeit, RAII, Lambdas als Aktionen; **wird in der Anwendung übersetzt** |
+| `sichttest_steuerung_qt.hpp` | SH | Zusatz für Qt: stellt die Rückrufe im GUI-Thread zu, `QString`/`QJsonObject`-Bequemlichkeit; ebenfalls in der Anwendung übersetzt |
+| Aktionen (Namen, Wirkung) | jede Anwendung | LumiViz: LV · Comm Studio: CS |
+| Schreibweise in Listen | SH | §6 |
+
+## 3. Schnittstelle S der DLL (C)
+
+Grundsätze: nur C-Typen; Zeichenketten sind UTF-8, nullterminiert; **Speicher wechselt nie den
+Besitzer** (was die DLL liefert, gilt bis zum nächsten Aufruf oder bis zum Ende des Rückrufs; was
+die Anwendung übergibt, kopiert die DLL sofort); jede Struktur beginnt mit ihrer Größe, damit sie
+in einer kleinen Fassung wachsen kann; kein Aufruf wirft.
+
+```c
+#define STS_S_MAJOR 1          /* Fassung der Schnittstelle S, mit der die Anwendung übersetzt ist */
+#define STS_S_MINOR 0
+
+typedef struct sts_sitzung sts_sitzung;        /* undurchsichtig */
+typedef struct sts_antwort sts_antwort;        /* undurchsichtig, lebt nur im Rückruf */
+
+typedef enum {
+    STS_OK = 0,            /* erledigt */
+    STS_FEHLER = 1,        /* Aktion bekannt, aber gescheitert (Text sagt, warum) */
+    STS_UNBEKANNT = 2,     /* diese Aktion kennt die Anwendung nicht */
+    STS_UNGUELTIG = 3,     /* Argumente passen nicht */
+    STS_UNVERTRAEGLICH = 4,/* Fassung S oder P passt nicht */
+    STS_KEIN_TESTER = 5    /* kein Tester erreichbar */
+} sts_status;
+
+/* Rückruf einer Aktion. Läuft im Thread, der sts_pumpe() ruft — also im GUI-Thread. */
+typedef sts_status (*sts_rueckruf)(void* nutzer,
+                                   const char* aktion,          /* Name, wie angemeldet */
+                                   const char* argumente_json,  /* JSON-Objekt, UTF-8 */
+                                   sts_antwort* antwort);       /* Text für den Tester */
+
+typedef struct {
+    uint32_t     groesse;        /* sizeof(sts_aktion) */
+    const char*  name;           /* [a-z0-9_.], gehört der Anwendung */
+    const char*  beschreibung;   /* ein Satz, erscheint im Tester */
+    const char*  parameter;      /* Hinweis: "datei=<pfad>" o. ä., frei */
+    uint32_t     schalter;       /* STS_FRAGT_NACH | STS_NUR_ERSTLAUF | STS_WARTET_AUF_MENSCH |
+                                    STS_BEENDET_ANWENDUNG, s. u. */
+    sts_rueckruf rueckruf;
+    void*        nutzer;
+} sts_aktion;
+
+typedef struct {
+    uint32_t    groesse;         /* sizeof(sts_konfig) */
+    uint16_t    s_major, s_minor;/* STS_S_MAJOR / STS_S_MINOR der Anwendung */
+    const char* anwendung;       /* "LumiViz", "CommStudio" — der Name, den Listen nennen */
+    const char* version;         /* Version der Anwendung, landet im Testlog */
+    const char* projekt_datei;   /* optional: Pfad zu sichttest.projekt.json; sonst Suchregel §7 */
+} sts_konfig;
+
+/* Fassungen der DLL, ohne Sitzung abfragbar. */
+void       sts_fassung(uint16_t* s_major, uint16_t* s_minor,
+                       uint16_t* p_major_min, uint16_t* p_major_max,
+                       const char** produkt);                 /* "0.2.0" = Tag des Repos */
+
+/* Sitzung anlegen; prüft S (§5). Öffnet noch nichts. */
+sts_status sts_oeffne(const sts_konfig* k, sts_sitzung** s);
+/* Aktion anmelden; vor oder nach dem Verbinden (später Angemeldetes wird nachgemeldet). */
+sts_status sts_melde_aktion(sts_sitzung* s, const sts_aktion* a);
+/* Wecker: wird aus dem Lesethread der DLL gerufen, sobald etwas wartet. Darf nur
+   einen Anstoß in den GUI-Thread stellen (z. B. ein Ereignis posten). */
+void       sts_setze_wecker(sts_sitzung* s, void (*wecker)(void* nutzer), void* nutzer);
+/* Mit dem Tester verbinden; startet ihn, falls keiner lauscht. Kehrt sofort zurück,
+   das Ergebnis kommt über den Zustand. */
+sts_status sts_verbinde(sts_sitzung* s);
+/* Im GUI-Thread: wartende Aufrufe ausführen (Rückrufe laufen HIER). Liefert die Zahl. */
+int        sts_pumpe(sts_sitzung* s);
+/* Text zur Antwort legen (nur im Rückruf). */
+void       sts_antwort_text(sts_antwort* antwort, const char* text);
+/* Freie Meldung an den Tester, erscheint dort in der Statuszeile und im Log. */
+sts_status sts_melde(sts_sitzung* s, const char* text);
+/* 0 = getrennt, 1 = verbindet, 2 = verbunden, 3 = abgelehnt (Fassung). */
+int        sts_zustand(sts_sitzung* s);
+const char* sts_letzter_fehler(sts_sitzung* s);
+/* Schreibt wartende Antworten und `tschuess` noch hinaus (höchstens 2 s), dann Ende. */
+void       sts_schliesse(sts_sitzung* s);
+```
+
+**Was nicht in der Schnittstelle steht** (Vorgabe Patrik, 2026-10-08): Pfade zu Listen, Ablage,
+Gewichtung, der Ort des Testers und wie die Anwendung gestartet wird. Das alles steht in der
+**Projektdatei** (§7) und nicht im Quelltext der Anwendung. Im Quelltext stehen nur der Name, die
+Version und die Aktionen — also das, was nur der Quelltext wissen kann. Eine neue Anwendung
+braucht damit keine Änderung an der Schnittstelle, und ein neuer Listenordner keine Übersetzung.
+
+**Die vier Schalter einer Aktion** setzt die Anwendung beim Anmelden:
+
+| Schalter | Bedeutung | Was der Tester tut |
+|---|---|---|
+| `STS_FRAGT_NACH` | verändert Zustand, der verloren gehen kann (Tabs schließen, Ungespeichertes verwerfen), fragt aber **nicht selbst** | fragt vorher, einmal je Vorbereitung — auch beim Fortsetzen |
+| `STS_NUR_ERSTLAUF` | räumt ab, statt herzustellen; gehört nur an den Anfang eines neuen Laufs | lässt die Aktion beim **Fortsetzen** eines Laufs aus (§6.4) |
+| `STS_WARTET_AUF_MENSCH` | die Aktion fragt **in der Anwendung** nach (Dialoge), ihre Dauer hängt am Menschen | keine Frist; zeigt „wartet auf die Anwendung" mit **Abbrechen** (der Tester wartet dann nicht weiter, eine späte Antwort wird verworfen) |
+| `STS_BEENDET_ANWENDUNG` | nach der Antwort endet die Anwendung oder startet neu | wertet das Ende der Verbindung nicht als Fehler, zeigt „Anwendung startet neu" und wartet auf die neue Verbindung |
+
+Eine Aktion trägt `STS_FRAGT_NACH` **oder** `STS_WARTET_AUF_MENSCH`, nie beide — gefragt wird an
+einer Stelle, dort, wo der Text stimmt.
+
+„Fragt vorher" und „nur im ersten Lauf" sind getrennt, weil sie nur beim Comm Studio
+zusammenfallen (Befund LV, 08.10.2026): `tabs_schliessen` trägt beide; `komposition_laden` von
+LumiViz ersetzt Ungespeichertes und trägt `STS_FRAGT_NACH`, **ist** aber das Herstellen und muss
+beim Fortsetzen laufen.
+
+**Kein Rückruf vor `sts_verbinde()`.** Vorher gibt es keine Verbindung und damit keinen Aufruf;
+danach laufen Rückrufe nur in `sts_pumpe()`. Die Anwendung bestimmt mit dem Zeitpunkt von
+`sts_verbinde()` also, ab wann sie gesteuert werden kann (LumiViz: erst nach dem Wiederherstellen
+seines Startzustands, `LumiViz/…/MainWindow.cpp:217–263`).
+
+**Wiedereintritt.** Ein Rückruf darf einen modalen Dialog öffnen; der dreht die Ereignisschleife,
+und der Wecker stellt `sts_pumpe()` erneut zu, während der erste Rückruf noch läuft. Festgelegt:
+je Sitzung läuft **höchstens ein Rückruf zugleich**. Ein `sts_pumpe()` innerhalb eines Rückrufs
+führt nichts aus und liefert 0; was wartet, kommt nach dessen Ende an die Reihe (die DLL weckt
+dann erneut). Kein Aufruf wird zweimal ausgeführt. Der Selbsttest prüft das mit einem Rückruf, der
+selbst `sts_pumpe()` ruft. Der Tester schickt je Verbindung ohnehin nur einen Aufruf zur Zeit.
+
+**Rückrufe im GUI-Thread.** Die DLL liest den Kanal in einem eigenen Thread und legt jeden Aufruf
+in eine Warteschlange. Ausgeführt wird **nur** in `sts_pumpe()`, das die Anwendung in ihrem
+GUI-Thread ruft. Damit sie nicht pollen muss, ruft die DLL den **Wecker**; der Qt-Kopf setzt ihn
+auf `QMetaObject::invokeMethod(…, Qt::QueuedConnection)`, sodass `sts_pumpe()` im nächsten
+Durchlauf der Ereignisschleife läuft. Die DLL kennt dabei weder Qt noch eine Ereignisschleife.
+
+**So sieht es in einer Qt-Anwendung aus** (mit `sichttest_steuerung_qt.hpp`):
+
+```cpp
+if (QCoreApplication::arguments().contains("--testing")) {
+    m_steuerung = sichttest::Steuerung::lade("LumiViz", version);   // lädt die DLL, sonst leer
+    if (m_steuerung) {
+        m_steuerung->aktion("panel_zeigen", "Holt ein Panel nach vorn", "name=<Titel>",
+            [this](const QJsonObject& arg) -> sichttest::Ergebnis {
+                return zeigePanel(arg["name"].toString())
+                     ? sichttest::ok() : sichttest::fehler("kein Panel dieses Namens");
+            });
+        m_steuerung->verbinde();
+    }
+}
+```
+
+**Bewusst nicht in Fassung 1:** Aktionen, die erst später fertig werden (Antwort nach dem
+Rückruf), Abfragen des Zustands der Anwendung durch den Tester, Ereignisse der Anwendung als
+Bedingung eines Schritts. Alles drei lässt sich als kleine Fassung (neue Aufrufe) nachtragen.
+
+## 4. Kanal und Protokoll P (Sichttest.exe ↔ DLL)
+
+**Der Tester lauscht, die DLL verbindet sich** — nicht umgekehrt.
+
+- Die Anwendung öffnet nichts, worauf jemand von außen zugreifen könnte; sie baut bei
+  `--testing` eine Verbindung **nach außen** auf.
+- Der Tester überlebt Absturz und Neustart der Anwendung. Die neu gestartete Anwendung verbindet
+  sich wieder, der Lauf geht beim selben Schritt weiter. Das ersetzt `--resume-log=<pfad>` des
+  Comm Studio (`UART/gui/Comm_Studio/MainWindow.cpp:2323–2330`), ohne dass der Tester etwas
+  über den Neustart wissen muss.
+- Mehrere Anwendungen können zugleich verbunden sein; eine Liste nennt ihre Anwendung (§6), der
+  Tester wählt die Verbindung nach dem Namen aus `sts_konfig.anwendung`.
+
+**Ablauf beim Start** (`Anwendung.exe --testing`):
+
+1. Anwendung lädt die DLL (§8), meldet ihre Aktionen an, ruft `sts_verbinde()`.
+2. Die DLL sucht den Kanal des Testers. Lauscht keiner, startet sie `Sichttest.exe` (Suchregel §7)
+   mit `--steuerung` und versucht es bis zu 10 s erneut.
+3. `hallo` → `willkommen` (oder `abgelehnt`). Aus `hallo` kennt der Tester den Pfad der Exe; von
+   dort findet er die Projektdatei (§7) und öffnet deren Listen. Danach Aufrufe.
+
+Die DLL liest keine Projektdatei und kennt keine Pfade außer dem des Testers.
+
+Ein Tester, der wie heute von Hand gestartet wird, lauscht ebenfalls; eine Liste ohne Aktionen
+verhält sich genau wie heute.
+
+**Kanal:** unter Windows eine benannte Pipe `\\.\pipe\sichttest-<Benutzer>`, nur für den
+angemeldeten Benutzer zugänglich, nur eine erste Instanz (kein Unterschieben). Die DLL benutzt
+dafür die Windows-API direkt; der Tester benutzt `QLocalServer` (unter Windows dieselbe Pipe).
+Andere Plattformen: §11 E3.
+
+**Rahmen:** 4 Byte Länge (little endian) + ein JSON-Objekt in UTF-8. Die DLL bringt dafür einen
+eigenen kleinen JSON-Leser mit; die Argumente einer Aktion reicht sie ungeprüft als Text weiter.
+
+| Nachricht | Richtung | Inhalt |
+|---|---|---|
+| `hallo` | DLL → Tester | `p_min`, `p_max` (große Fassungen von P, die die DLL spricht), `s`, `produkt`, `anwendung`, `version`, `exe`, `pid`, `projekt_datei` (falls gesetzt), `aktionen[]` (`name`, `beschreibung`, `parameter`, `schalter[]`) |
+| `willkommen` | Tester → DLL | gewählte Fassung `p`, Fassung des Testers |
+| `abgelehnt` | Tester → DLL | Grund als Text (keine gemeinsame Fassung) |
+| `aktionen` | DLL → Tester | nachgemeldete Aktionen |
+| `aufruf` | Tester → DLL | `id`, `aktion`, `argumente{}`, `basis` (Ordner der Projektdatei, sonst der Liste). Der Tester reicht jeden Wert **unverändert** durch, auch Pfade; aufgelöst wird in der Anwendung (das Comm Studio löst gegen Repo und Exe-Ordner auf und lässt nur Ziele darunter zu, `TestProtokollWindow.cpp:1407–1417`), `basis` ist nur ein Angebot |
+| `antwort` | DLL → Tester | `id`, `status` (`ok`, `fehler`, `unbekannt`, `ungueltig`), `text` |
+| `meldung` | DLL → Tester | freier Text |
+| `tschuess` | beide | geordnetes Ende |
+
+Der Tester wartet je Aufruf 10 s (in der Liste je Aktion änderbar); für Aktionen mit
+`STS_WARTET_AUF_MENSCH` gilt keine Frist (§3). Bleibt die Antwort aus, gilt §6.3: der Handgriff
+erscheint als Text, eine verspätete Antwort wird verworfen.
+
+## 5. Drei Nummern, zwei davon werden geprüft
+
+| Nummer | Wo sie steht | Wann geprüft | Von wem |
+|---|---|---|---|
+| **P** — Protokoll Tester ↔ DLL, `groß.klein` | in Tester und DLL einkompiliert | beim Verbinden (`hallo`) | Tester |
+| **S** — Schnittstelle DLL ↔ Anwendung, `groß.klein` | `STS_S_MAJOR/MINOR` im Kopf, also in der Anwendung; in der DLL; die große Nummer zusätzlich **im Dateinamen** `SichttestSteuerung1.dll` | beim Laden (`sts_oeffne`) | DLL |
+| **Produkt** — Tag des Repos, `v0.2.0` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
+
+**Was die große, was die kleine Nummer ändert**
+
+- **Kleine Nummer** (P und S): es kommt etwas dazu, nichts ändert seine Bedeutung. P: neue
+  Nachrichten, neue Felder. S: neue Aufrufe, neue Felder am Ende einer Struktur, neue Statuswerte.
+- **Große Nummer**: etwas Bestehendes ändert Form oder Bedeutung oder fällt weg.
+- Pflicht dazu, auf beiden Seiten: unbekannte Felder werden überlesen; eine unbekannte Nachricht
+  wird mit `unbekannt` beantwortet, nie mit einem Abbruch.
+
+**Regel zur Verträglichkeit**
+
+- **S:** Die DLL nimmt eine Anwendung an, wenn die große Nummer gleich ist und die kleine der
+  Anwendung nicht über der der DLL liegt. Sonst `STS_UNVERTRAEGLICH` mit Klartext
+  (`sts_letzter_fehler`); die Anwendung läuft ohne Steuerung weiter. Durch die große Nummer im
+  Dateinamen kann eine unverträgliche DLL gar nicht erst geladen werden.
+- **P:** Der **Tester** trägt die Last, denn er ist der Teil, der einmal je Rechner aktuell
+  gehalten wird, während jede Anwendung ihren eigenen, älteren Pin hat. Er spricht die aktuelle
+  große Fassung und die vorige. Gewählt wird die höchste gemeinsame.
+  - Gegenstelle **älter**, gleiche große Fassung: was ihr fehlt, antwortet sie mit `unbekannt`;
+    der Tester zeigt den Handgriff als Text.
+  - Gegenstelle **älter als die vorige große Fassung**: `abgelehnt` mit dem Hinweis, den Pin der
+    Anwendung zu heben. Der Lauf geht ohne Steuerung weiter.
+  - Gegenstelle **neuer** als der Tester (große Fassung): `abgelehnt` mit dem Hinweis, den Tester
+    zu erneuern. Der Lauf geht ohne Steuerung weiter.
+- **In keinem Fall hält eine Unverträglichkeit den Lauf an.** Sie steht sichtbar in der
+  Statuszeile des Testers und im Testlog (`steuerung: { anwendung, version, produkt, p, s, zustand }`).
+
+Die **Aktionen** tragen keine eigene Nummer von dieser Seite: ihre Namen gehören der Anwendung,
+und der Tester erfährt bei jedem Verbinden, welche es gibt.
+
+## 6. Was eine Liste trägt
+
+Eine **Aktion** ist: Name, Argumente (Schlüssel = Wert), dazu der **Text**, der den Handgriff für
+einen Menschen beschreibt. Der Text ist immer da — er ist der Rückfall.
+
+### 6.1 Markdown
+
+Die Liste bleibt lesbar wie heute. Eine Aktion ist ein **Code-Stück, das mit `aktion:` beginnt**;
+es steht im Text des Punkts, zu dem es gehört:
+
+```markdown
+**Anwendung:** LumiViz · **Exe:** `out\build\…\LumiViz.exe`
+
+## M. Der shape der Zeile MASTER bleibt an seiner Zeit
+
+- [ ] **M0 Vorbereiten:** Im Panel Composer **Load...** → `asset\sichttest\composer_A_master.lvcomp`.
+      Dann **Composer on** an, **Edit** an, einmal **Fit** klicken. Du siehst: Länge 1:00 …
+      `aktion: komposition_laden datei="asset\sichttest\composer_A_master.lvcomp"`
+      `aktion: composer an` `aktion: edit an`
+- [ ] **M1 Der shape ist zu hören und zu sehen:** *Tun:* Abspielmarke auf 0:20 setzen, Play …
+      `aktion: abspielmarke zeit=0:20`
+```
+
+- Form: `` `aktion: <name> [wert] [schlüssel=wert …]` ``; Werte mit Leerzeichen in `"…"`. Ein
+  einzelner Wert ohne Schlüssel kommt als Argument `wert` an.
+- **Vorbereitung:** ein Punkt, dessen Titel mit **Vorbereiten** beginnt (das Format der neuen
+  LumiViz-Listen, `LumiViz/.claude/handover/Sichttest_Composer_1_Master-Zeilen.md`). Er bekommt
+  kein Urteil, sondern **▶ Ausführen** und **Weiter →**; seine Aktionen laufen der Reihe nach.
+  Steht er vor dem ersten Abschnitt, gilt er für die ganze Liste.
+- **Je Schritt:** die Aktionen eines gewöhnlichen Punkts laufen **nicht von selbst**, sondern auf
+  den Knopf **▶ Herstellen** — der Mensch entscheidet, ob er den Handgriff selbst macht (oft ist
+  gerade der Handgriff das, was geprüft wird).
+- **Neu laden:** jeder Punkt zeigt zusätzlich **↺ Vorbereitung**, das die Vorbereitung seines
+  Abschnitts wiederholt („Hast du etwas verstellt, lade die Vorlage einfach neu").
+- Das Werkzeug nimmt die `aktion:`-Stücke aus dem angezeigten Text heraus; in jedem anderen
+  Markdown-Betrachter stehen sie als unauffälliger Code am Ende des Punkts.
+- **Verweis:** `` `aktion: @G0` `` führt die Aktionen des Punkts mit der Kennung `G0` derselben
+  Liste aus, an dieser Stelle der Reihe; eigene Aktionen dürfen davor und danach stehen. So
+  schreibt „wie G0, aber Edit an" nur `` `aktion: @G0` `aktion: edit an` `` und läuft nicht
+  auseinander. Ein Verweis auf eine unbekannte Kennung oder im Kreis wird beim Laden der Liste
+  gemeldet und wie eine unbekannte Aktion behandelt (§6.3).
+- `**Anwendung:**` im Vorspann nennt den Namen, unter dem sich die Anwendung meldet. Fehlt er,
+  gilt die einzige verbundene Anwendung.
+
+### 6.2 `*.testprotokoll.json`
+
+Neu, allgemein:
+
+```json
+{
+  "title": "…", "anwendung": "CommStudio",
+  "vorbereitung": [ { "aktion": "datei_oeffnen", "mit": { "pfad": "examples/demo.project.json" },
+                      "text": "Projekt demo öffnen" } ],
+  "steps": [
+    { "id": "db-01", "section": "A", "title": "…", "text": "…",
+      "aktionen": [ { "aktion": "tab_zeigen", "mit": { "titel": "Datenbank" } } ] },
+    { "id": "db-00", "kind": "prep", "title": "Vorbereiten", "text": "…", "aktionen": [ … ] }
+  ]
+}
+```
+
+Dazu `"nachbereitung": [ … ]` an der Wurzel: Aktionen, die der Tester am Ende des Laufs anbietet
+(bei FERTIG und beim Schließen), nie während er auf eine neu startende Anwendung wartet.
+
+Die **Felder des Comm Studio bleiben gültig**. Das Werkzeug kennt sie als Teil seines Formats;
+**welche Aktion** ein Feld auslöst, steht in der Projektdatei unter `abbildung` (§7) — die Namen
+in der Tabelle sind die des Comm Studio, nicht die des Werkzeugs. So werden sie abgebildet, damit
+die zwölf vorhandenen Protokolle (11 in `UART/assets/testing/protocols/`, eines in
+`UART/assets/v2/tester/`; 127 Schritte, gezählt von CS am 08.10.2026) nicht umgeschrieben werden:
+
+| Feld heute | Beleg | wird zu |
+|---|---|---|
+| `setup.close_all_tabs` | `TestProtokollWindow.cpp:1227` | Vorbereitung `tabs_schliessen` (`STS_FRAGT_NACH` und `STS_NUR_ERSTLAUF`) |
+| `setup.open[]` | `:1229`, `:1246–1254` | Vorbereitung `datei_oeffnen pfad=…` je Eintrag |
+| Schritt `"tab"` und Link `[…](tab://Titel)` im Text | `:1733`, `:284`, `MainWindow.cpp:2251` | `tab_zeigen titel=…` |
+| Schritt `"restart": true` | `:1741`, `MainWindow.cpp:2323` | `neustart` (`STS_BEENDET_ANWENDUNG`) |
+| Link `[…](sql:SELECT…)` im Text (ohne `//`) | `:269–302`, `MainWindow.cpp:2294` | `sql_einfuegen sql=…`; die Zwischenablage füllt der Tester selbst |
+| `test_db { name, seed[] }` | `:1258 ff.`, `:1421 ff.` | Vorbereitung `testdb_einrichten name=… seed=…` (läuft **vor** `setup`, `:1218–1221`), Nachbereitung `testdb_abbauen` (beide `STS_WARTET_AUF_MENSCH`) |
+| Schritt `"kind": "prep"` | `:1097`, `:1746` | Vorbereitungs-Punkt ohne Urteil (wie 6.1) |
+| Schritt `"areas": […]` | `:1126 ff.` | keine Aktion; wird gelesen und ins Log getragen (Nachtest-Indikator, §6.5) |
+| Schlüssel mit `_` vorn | — | Kommentar, wird überlesen |
+
+Die sieben Namen hat CS übernommen (Nachricht vom 08.10.2026, 22:05); sie gehören dem Comm
+Studio. Einrichten und Abbauen der Test-DB samt aller Rückfragen bleiben im Studio.
+
+**Testlog:** Das Werkzeug liest und schreibt zusätzlich, was das Studio heute schreibt, damit
+alte Läufe lesbar bleiben: `history[]` je Schritt (`:1900–1908`), `setup` und `test_db` samt
+`test_db.active` an der Wurzel, `pass_remark` in der Zusammenfassung.
+
+### 6.3 Unbekannte Aktion, keine Verbindung, Fehler
+
+Für alle Fälle dieselbe Regel: **der Lauf hält nie an, der Handgriff erscheint als Text.**
+
+| Fall | Was der Tester tut |
+|---|---|
+| keine Anwendung verbunden | Knöpfe ▶ sind grau; der Text des Punkts steht da wie heute |
+| Aktion steht nicht in der Liste aus `hallo` | schon beim Laden der Liste: Hinweis „3 Aktionen kennt LumiViz 0.4.0 nicht" mit den Namen; am Punkt: „von Hand:" + Text |
+| Antwort `unbekannt` / `ungueltig` / `fehler` | Meldung der Anwendung in Rot am Punkt, darunter „von Hand:" + Text |
+| keine Antwort in der Frist | wie Fehler, Text „keine Antwort nach 10 s" |
+| der Tester hat die Anwendung gestartet (`start`, §7), aber in der Frist kommt kein `hallo` | eigene Meldung: „gestartet, aber nicht verbunden — läuft die Anwendung schon ohne `--testing`?" (LumiViz lässt je Exe nur eine Instanz zu; ein zweiter Start endet sofort, `LumiViz/…/Application.cpp:354–383`) |
+| Aktion mit `fragt_nach` (schließt Tabs, verwirft Ungespeichertes) | der Tester fragt einmal je Vorbereitung, was gleich passiert (wie heute `runEnvironmentSetup`, `TestProtokollWindow.cpp:1235–1243`) |
+
+Jede ausgelöste Aktion steht mit Name, Status und Text im Testlog des Schritts (`actions[]`).
+Das Urteil bleibt immer beim Menschen — eine gescheiterte Aktion macht keinen Punkt zu Fail.
+
+### 6.4 Fortsetzen eines Laufs
+
+Wird ein Lauf fortgesetzt (neuer Start des Testers, oder die Anwendung hat sich neu verbunden),
+bietet der Tester die Vorbereitung erneut an, lässt dabei aber jede Aktion mit `STS_NUR_ERSTLAUF`
+aus: es wird nur hergestellt, nie abgeräumt (heute `offerMissingSetupTabs`,
+`TestProtokollWindow.cpp:570`). Aktionen mit `STS_FRAGT_NACH` laufen, nach der Rückfrage. Das setzt voraus, dass die übrigen Aktionen der Vorbereitung
+wiederholbar sind — `datei_oeffnen` des Comm Studio antwortet `ok`, wenn die Datei schon offen
+ist, `testdb_einrichten`, wenn die Test-DB schon aktiv ist.
+
+### 6.5 Ablage
+
+Ohne Projektdatei schreibt das Werkzeug wie heute nach `<Ordner der Liste>/sichttest-logs/`. Mit
+Projektdatei (§7) nennt jeder Listenordner seine Ablage; dorthin gehen Testlog, Report,
+Screenshots und die Ergebnis-DB. (Ein früherer Entwurf sah je Listenordner eine Datei
+`sichttest.ordner.json` vor; sie ist in der Projektdatei aufgegangen.)
+
+Die **Kennung eines Schritts** ist je Ablage eindeutig; die letzten Ergebnisse eines Schritts
+werden je Ablage über alle Protokolle gelesen (`TestProtokollWindow.cpp:1197–1201`), damit ein
+verschobener Schritt seine Historie behält.
+
+## 7. Die Projektdatei `sichttest.projekt.json`
+
+**Eine Datei je Anwendung, im Repo der Anwendung, versioniert.** Sie trägt alles, was der Tester
+über das Projekt wissen muss und was sich ändern kann, ohne dass jemand übersetzt. Pfade sind
+relativ zur Datei.
+
+```json
+{
+  "schema": 1,
+  "anwendung": "CommStudio",
+  "start": { "exe": "Build/x64/Release/comm_studio/comm_studio.exe", "argumente": ["--testing"] },
+  "listen": [
+    { "ordner": "assets/testing/protocols", "ablage": "Studio-Testlogs" },
+    { "ordner": "assets/v2/tester",         "ablage": "Studio-Testlogs/v2" }
+  ],
+  "gewichtung": {
+    "hand": [ "assets/testing/test-gewichtung.json", "assets/v2/tester/test-gewichtung.json" ],
+    "git":  [ "assets/testing/gitGewichtung.json",   "assets/v2/tester/gitGewichtung.json" ]
+  },
+  "abbildung": {
+    "setup.close_all_tabs": "tabs_schliessen",
+    "setup.open":           "datei_oeffnen pfad",
+    "tab":                  "tab_zeigen titel",
+    "restart":              "neustart",
+    "sql":                  "sql_einfuegen sql",
+    "test_db":              "testdb_einrichten name seed",
+    "test_db.ende":         "testdb_abbauen"
+  }
+}
+```
+
+| Schlüssel | Bedeutung | fehlt er |
+|---|---|---|
+| `schema` | Fassung dieser Datei; unbekannte Schlüssel werden überlesen | gilt als 1 |
+| `anwendung` | der Name, unter dem sich die Anwendung meldet (`sts_konfig.anwendung`) | der Tester nimmt die einzige verbundene Anwendung |
+| `start` | wie der Tester die Anwendung startet, **wenn sich in seiner Sitzung noch keine gemeldet hat**. Hatte sich eine gemeldet (Absturz, Neustart), startet er die Exe aus deren `hallo` — sonst holte er nach dem Absturz einer Debug-Exe die Release-Exe | er startet sie nicht, der Mensch tut es |
+| `listen[]` | Listenordner (oder einzelne Listen), je mit `ablage` und optional `muster` (Dateimuster, etwa `"Sichttest_Composer_*.md"` — ohne es nimmt das Werkzeug jede `*.md` mit Schritten). Ein genannter Ordner, den es nicht gibt, wird still übergangen (frischer Klon ohne `.claude/`) | Ordner der Projektdatei; Ablage `sichttest-logs/` |
+| `gewichtung { hand[], git[] }` | Dateien des Nachtest-Indikators in **zwei Schichten**, die verschieden gerechnet werden: `hand` trägt je Bereich `weight`, `changed`, `note`, dazu `retest_steps` und `auto_weight`; `git` trägt `changed`, `commit`, `file` und hebt nur auf `auto_weight` (`TestProtokollWindow.cpp:1026–1083`, `:1148–1170`). Innerhalb einer Schicht gilt die Reihenfolge der Liste. Eine genannte Datei, die fehlt, wird still übergangen (`gitGewichtung.json` ist rechnerlokal). Format und Pflege bleiben bei der Anwendung | kein Indikator |
+| `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2); `tab` und `sql` gelten auch für die Links `tab://…` und `sql:…` im Text | das Feld wird gelesen und als Text gezeigt |
+
+Für LumiViz genügt:
+
+```json
+{ "schema": 1, "anwendung": "LumiViz",
+  "start": { "exe": "out/build/windows-ninja-release-clang/exec/LumiViz/bin/Release/LumiViz.exe",
+             "argumente": ["--testing"] },
+  "listen": [ { "ordner": ".claude/handover", "muster": "Sichttest_Composer_*.md" } ] }
+```
+
+Die Aktionen von LumiViz (fünfzehn, von LV benannt am 08.10.2026, Sync-Nachricht
+`LV-20261008-2244-…` mit Datei:Zeile): `komposition_laden datei`, `komposition_schliessen`,
+`composer an|aus`, `edit an|aus`, `fit`, `abspielmarke zeit`, `wiedergabe start|pause|stopp`,
+`schleife an|aus`, `sync_kette an|aus`, `panel_zeigen name`, `preset_laden datei`,
+`karaoke_laden datei`, `karaoke an|aus`, `titel_laden datei [spielen=ja]`,
+`player start|pause|stopp`. Vier davon ersetzen Ungespeichertes und tragen `STS_FRAGT_NACH`;
+keine öffnet einen Dialog, keine braucht eine spätere Fertigmeldung. Die Namen gehören LumiViz.
+
+**Wie sie gefunden wird**
+
+- Start über die Anwendung: `hallo` nennt den Pfad der Exe. Der Tester sucht von dort **aufwärts**
+  bis zur ersten `sichttest.projekt.json` (so findet er heute schon `.claude/handover`,
+  `main.cpp:80–94`). `sts_konfig.projekt_datei` setzt den Pfad ausdrücklich, falls die Exe
+  außerhalb des Repos liegt.
+- Start von Hand: `Sichttest <projektdatei>` oder `Sichttest <ordner>` — im zweiten Fall sucht er
+  vom Ordner aufwärts. Ohne Projektdatei verhält er sich wie heute.
+
+**Was die Datei zusammenführt:** ein Ort für Listen, Ablage, Gewichtung und Start; derselbe für
+einen von der Anwendung und einen von Hand gestarteten Tester; und die Namen der Aktionen bleiben
+bei der Anwendung — das Werkzeug kennt das JSON-Format, aber keinen Aktionsnamen irgendeiner
+Anwendung. Eine dritte Anwendung schreibt eine solche Datei und meldet Aktionen an; an
+Werkzeug, DLL und Schnittstelle ändert sich dafür nichts.
+
+### 7.1 Wo der Tester bei der Anwendung liegt
+
+`Sichttest.exe` bringt **sein eigenes Qt** mit. Es darf deshalb **nicht neben der Exe der
+Anwendung liegen**: dort liegt deren Qt, und beide Sätze heißen `Qt6Core.dll` (Comm Studio baut
+im Geschäft mit Qt 6.8.2, zu Hause mit 6.10.1 — `UART/CLAUDE.md`, Tabelle „Qt (auto-probed)";
+LumiViz als Debug-Build lädt `Qt6Cored.dll`).
+
+Suchregel der DLL für den Tester, in dieser Reihenfolge: Umgebungsvariable `SICHTTEST_EXE` (für
+die Entwicklung am Werkzeug) → `<Ordner der DLL>\sichttest\Sichttest.exe` (§11 E2).
+
+## 8. Laden nur bei `--testing`
+
+Die Anwendung wird **nicht gegen die DLL gelinkt**. Der Kopf `sichttest_steuerung.hpp` lädt
+`SichttestSteuerung1.dll` zur Laufzeit (`LoadLibrary`, Adressen der Aufrufe einzeln geholt), und
+zwar nur dort, wo die Anwendung es verlangt — im Zweig `--testing`. Geladen wird mit **vollem
+Pfad** aus dem Ordner der Exe, nie über den Suchpfad (so lädt das Comm Studio heute schon
+`pl1000.dll`, `UART/core/PicoLogApi.cpp:165`).
+
+- Ein gewöhnlicher Start lädt nichts und öffnet nichts. Das ist durch den Aufbau gegeben, nicht
+  durch eine Abfrage, die jemand vergessen kann.
+- Fehlt die DLL, sagt `--testing` das in einem Satz, und die Anwendung läuft weiter.
+- Die Anwendung braucht zum **Bauen nur die Köpfe**; DLL und Tester sind Laufzeit-Beigaben. Eine
+  Import-Bibliothek und ein Linker-Schalter für verzögertes Laden entfallen.
+
+**Fehlt das Paket, fehlen auch die Köpfe** (andere Plattform, E3; oder kein Netz beim ersten
+Holen). Die Anwendung übersetzt dann ohne Steuerung. Ist das Paket da, setzt
+`craft_package_deploy` (§10) am Target neben dem Include-Pfad das Define `SICHTTEST_VORHANDEN=1`:
+
+```cpp
+#ifdef SICHTTEST_VORHANDEN
+#  include <sichttest_steuerung_qt.hpp>
+#endif
+```
+
+Alles, was die Steuerung benutzt, steht hinter `#ifdef SICHTTEST_VORHANDEN` an **einer** Stelle
+der Anwendung (dem Anmelden der Aktionen). Das Define kommt aus derselben Funktion wie der
+Include-Pfad, in LumiViz wie im Comm Studio; welcher Zweig gilt, steht damit im Configure-Log
+(Vorschlag CC, Wunsch CS — ein erster Entwurf mit `__has_include` ist dafür aufgegeben).
+
+## 9. Bezug in den Anwendungen
+
+Die zwei Anwendungen bauen **verschieden**: LumiViz mit CMakeCraft (`LumiViz/cmakecraft.pin`),
+das Comm Studio mit eigenem CMake ohne CMakeCraft (`UART/CMakeLists.txt`, `UART/CMakePresets.json`,
+kein `cmakecraft.pin`; MSVC aus Visual Studio 2026). Der Bezug darf deshalb nicht an CMakeCraft hängen.
+
+**Was eine Version liefert** (ein Paket je Tag `vX.Y.Z`):
+
+```
+sichttest-vX.Y.Z-win64/
+├── include/   sichttest_steuerung.h · sichttest_steuerung.hpp · sichttest_steuerung_qt.hpp
+├── bin/       SichttestSteuerung1.dll
+├── sichttest/ Sichttest.exe mit seinem Qt
+└── VERSION    drei Zeilen: produkt=0.2.0 · s=1.0 · p=1
+```
+
+Gebaut wird das Paket nur als Release, ohne `.pdb`. Verbindlich stehen S und P im Kopf
+`sichttest_steuerung.h`; die Datei `VERSION` entsteht aus einer Schablone (`@VERSION@` aus
+`Solution.json`, S und P von Hand), und der Selbsttest vergleicht sie mit `sts_fassung()`.
+
+**Pin:** jede Anwendung nennt in einer Datei `sichttest.pin` Version, Adresse und Prüfsumme
+(Vorbild `cmakecraft.pin`; Entwurf CC vom 08.10.2026):
+
+```cmake
+set(SICHTTEST_VERSION "v0.2.0")
+set(SICHTTEST_URL     "https://github.com/PatrikNeunteufel/SichtTest_Helper/releases/download/${SICHTTEST_VERSION}/sichttest-${SICHTTEST_VERSION}-win64.zip")
+set(SICHTTEST_SHA256  "<64 Hex-Zeichen>")
+set(SICHTTEST_FALLBACK_PATHS "../SichtTest_Helper/out/package")
+```
+
+Gesucht wird in dieser Reihenfolge: `SICHTTEST_LOCAL_DIR` (Entwicklung) → Zwischenspeicher
+`.externals/sichttest/<version>/` → Herunterladen mit Prüfsumme → Fallback-Pfade.
+
+**Ohne Netz baut die Anwendung weiter:** lässt sich das Paket nicht holen und liegt es nicht
+schon im Zwischenspeicher, gibt es eine Warnung, die Köpfe fehlen dann nicht (sie liegen nach dem
+ersten Holen lokal), und `--testing` läuft ohne Steuerung. Das Comm Studio lädt bisher nichts
+beim Configure aus dem Netz; für es ist das Holen neu, das Verteilen nicht (es legt Ordner schon
+heute nach dem Bau neben die Exe, `UART/gui/Comm_Studio/CMakeLists.txt:672–713`).
+
+Entschieden ist das fertige Paket je Tag (§11 E1). Was CMakeCraft dafür heute kann: §10.
+
+## 10. CMakeCraft
+
+Geprüft am Quelltext von CMakeCraft v0.9.2 (gelesen am 2026-10-08, nichts gebaut; Pfade relativ
+zu `CMakeCraft/`).
+
+**In diesem Projekt (die DLL bauen)**
+
+| Bedarf | Stand | Beleg |
+|---|---|---|
+| Bibliothek als DLL (`"type": "SHARED"`) | geht | `cmake/project/LibraryCollect.cmake:97–104`, `LibraryCreate.cmake:157` |
+| Ohne Qt, obwohl das Projekt sonst Qt nutzt | geht — AUTOMOC und Qt-Link nur für Targets, die `Qt6` unter `externals` nennen | `cmake/externals/system/Handler.cmake:261–264` |
+| Exportierte C-Schnittstelle | geht mit eigenem Makro: CMake setzt bei einer DLL von sich aus `<Target>_EXPORTS`; ein Feld dafür gibt es nicht | kein `generate_export_header` in `cmake/` |
+| DLL neben die eigene Exe kopieren | geht nicht — **wird hier nicht gebraucht**: `Sichttest.exe` lädt die DLL nie (§4), die Gegenprobe lädt sie über ihren Pfad | `cmake/core/OutputDirs.cmake:94–116` |
+| Versionsangabe in der DLL-Datei (Windows-Ressource) | geht nicht — verzichtbar, `sts_fassung()` liefert dasselbe | — |
+| Feste C-Laufzeit nur für die DLL (`/MT`) | geht nicht: Bibliotheken kennen keine `compile_options`/`link_options` — verzichtbar (§12) | `LibraryCollect.cmake:57–218` |
+| **Paket je Tag schnüren** (Köpfe, DLL, Tester samt seinem Qt in einen Ordner/ein Archiv) | **geht nicht:** kein `install(`, kein Paketieren | kein Treffer in `cmake/`; nur als Idee in `docs/de/konzepte/Future_Enhancements.md:288–307` |
+
+**In LumiViz (das Paket beziehen)**
+
+| Bedarf | Stand | Beleg |
+|---|---|---|
+| Fertiges Paket in gepinnter Version holen (Archiv mit Prüfsumme oder Git-Tag) | **geht nicht:** Externals kennen nur `system`, `git`, `path`; kein URL-Bezug, keine Art „fertig" | `cmake/externals/Orchestrator.cmake:83–106` |
+| DLL **und den Ordner des Testers** neben die Exe der Anwendung legen | **geht nicht** allgemein; nur für BASS, Lua und Qt fest eingebaut | `cmake/externals/includes/bass/Include.cmake:106–111` |
+| Schalter auf einen lokalen Ordner je External | **geht nicht** | nur `CMAKECRAFT_LOCAL_DIR` für das Build-System selbst |
+| Als Quelle beziehen und nur die DLL mitbauen | **geht nicht:** keine Auswahl eines Targets, und ein CMakeCraft-Projekt als Unterprojekt erzeugt keine Targets | `cmake/externals/core/Fetch.cmake:595–623`, `CMakeCraft.cmake:60–63` |
+
+**Folge:** Bauen kann dieses Projekt die DLL mit CMakeCraft, wie es ist. Für das **Schnüren des
+Pakets** hier und für **Bezug und Verteilen** in LumiViz fehlt CMakeCraft etwas; das wird nicht
+mit einem Behelf überbrückt, sondern von CMakeCraft geliefert.
+
+**Entwurf von CC (08.10.2026, Sync-Nachricht `CC-20261008-2208-…`), geplant als v0.10.0:**
+
+- **Schnüren** (hier): neuer Schlüssel `packages` in `Solution.json`; das Target
+  `package_sichttest` legt `<build>/package/sichttest-v<version>-win64/` an, daneben `.zip` und
+  `.zip.sha256`. Das Hochladen als Release bleibt Handarbeit von Patrik; die Prüfsumme wandert in
+  die Pins. Dazu `output_name` an Bibliotheken: das Target heißt `SichttestSteuerung`, die Datei
+  `SichttestSteuerung1.dll`.
+- **Beziehen und verteilen** (LumiViz): neue External-Art `"archive": true` mit `pin`,
+  `include_dirs` (Include-Pfad ohne Link) und `runtime { files, dirs }` (neben jede Exe, die das
+  External nennt, je Konfiguration).
+- **Eine eigenständige Datei `CMakeCraftPackage.cmake`** trägt die ganze Bezugs- und
+  Verteillogik, ohne Abhängigkeit vom Kern von CMakeCraft. CMakeCraft ruft sie aus der neuen
+  External-Art; **das Comm Studio bindet dieselbe Datei direkt ein** (unveränderte Kopie im Repo,
+  wie der Bootstrap). Ein eigenes Skript von SH entfällt damit.
+- Hebt die Mindestversion von CMake auf 3.26 (Ordner nur bei Änderung kopieren).
+
+**Namen und Orte hier** (Angabe von SH an CC): Bibliothek `SichttestSteuerung` unter
+`projects/libs/SichttestSteuerung/`, die drei Köpfe in deren öffentlichem Ordner `include/`;
+Executable `Sichttest`.
+
+## 11. Entscheide (Patrik)
+
+| # | Entscheid | Stand |
+|---|---|---|
+| E1 | **Bezug:** Jede Version liefert ein fertiges Paket (Köpfe, DLL, Tester mit seinem Qt). Die Pakete liegen als Release am Git-Tag auf GitHub; die Anwendung nennt die Version in `sichttest.pin` und holt das Paket beim Configure. Für die Entwicklung zeigt `SICHTTEST_LOCAL_DIR` auf einen lokalen Stand. | entschieden 2026-10-08 |
+| E2 | **Ort des Testers:** Er liegt im Paket und wird als Unterordner `sichttest\` neben die Exe der Anwendung gelegt, mit seinem eigenen Qt. Die DLL findet ihn dort. | entschieden 2026-10-08 |
+| E3 | **Plattform:** Die Steuerung gibt es zuerst nur unter Windows. Die Schnittstelle ist plattformneutral; auf anderen Plattformen fehlt die DLL, und `--testing` läuft ohne Steuerung. | entschieden 2026-10-08 |
+| E4 | **Laden:** Die Anwendung linkt nicht gegen die DLL. Der Kopf lädt sie zur Laufzeit im Zweig `--testing`; fehlt sie, läuft die Anwendung ohne Steuerung weiter. | entschieden 2026-10-08 |
+| E5 | **Kanal:** Der Tester lauscht. Die DLL verbindet sich bei `--testing` und startet den Tester, falls keiner läuft. Nach einem Neustart der Anwendung verbindet sie sich erneut, der Lauf geht beim selben Schritt weiter. | entschieden 2026-10-08 |
+| E6 | **Umzug:** Es zieht alles um außer der Test-DB, in den fünf Stufen von §14. Zuerst wird die Steuerung gebaut und LumiViz angebunden (§13, Schritte 1 bis 4), darin Stufe 1 (alle Felder des Comm Studio lesen, Ablage je Ordner). Danach folgen die Stufen 2 bis 5. `TestProtokollWindow` entfällt nach Stufe 4; bis dahin laufen beide Tester nebeneinander. | entschieden 2026-10-08 |
+| V1 | **Vorgabe:** Was der Tester über ein Projekt wissen muss (Pfade zu Listen, Ablage, Start), steht in Konfigurationsdateien und nicht im Quelltext der Projekte; die Schnittstelle soll für die heutigen Projekte passen und für künftige nicht gleich geändert werden müssen. Umgesetzt als Projektdatei (§7). | Patrik 2026-10-08 |
+| E7 | **Sichtbarkeit:** Das Repo `SichtTest_Helper` wird auf GitHub öffentlich angelegt, unter dem privaten Konto wie LumiViz. Der Bezug lädt das Release-Archiv ohne Anmeldung. Einrichten und Veröffentlichen: `GitHub_Einrichtung.md`. | entschieden 2026-10-08 |
+
+## 12. Stellungnahme zu den Hinweisen von LV
+
+| Hinweis | Stellung | Begründung |
+|---|---|---|
+| Keine Qt-Typen über die Grenze | **übernommen, verschärft:** gar keine C++-Typen | Schon ohne Qt bindet eine C++-Grenze beide Seiten an denselben Compiler, dieselbe Laufzeitbibliothek und dieselbe Bauart (Debug/Release legen `std::string` verschieden an). Hier treffen clang (dieses Projekt, `CMakeCache.txt`), MSVC aus VS 2022/2026 und Debug-Builds aufeinander. |
+| Kein Qt in der DLL | **übernommen** | Der genannte Grund (zwei Qt in einem Prozess) trifft zu, und er tritt schon bei *einer* Qt-Fassung ein: eine Release-DLL zieht `Qt6Core.dll` in einen Debug-Prozess, der `Qt6Cored.dll` geladen hat. Dazu: eine mit Qt 6.10 gebaute DLL läuft nicht gegen das Qt 6.8.2 des Comm Studio im Geschäft. Die DLL verlangt damit nur noch die Release-Laufzeit von Visual C++, die jede dieser Anwendungen mit ihrem Qt ohnehin mitbringt; weil kein Speicher den Besitzer wechselt (§3), darf sie auch in einem Debug-Prozess laufen. |
+| C-Schnittstelle plus kleiner Kopf für C++/Qt | **übernommen**, als zwei Köpfe | `…​.hpp` ohne Qt (lädt die DLL, §8), `…_qt.hpp` für die Zustellung im GUI-Thread. Beide werden in der Anwendung übersetzt und sind damit immer mit deren Qt und Compiler gebaut. |
+| Aktionen im GUI-Thread | **übernommen**, als Abholen mit Wecker (§3) | „Zustellen" durch die DLL ginge nur, wenn sie die Ereignisschleife kennte — also mit Qt. |
+| Zwei Versionen | **übernommen**, dazu die Produktversion als Pin (§5) | Geprüft werden zwei Nummern, gepinnt wird eine dritte; ohne die Trennung würde jeder Fehlerbehebung im Tester ein Pin-Wechsel in allen Anwendungen folgen. |
+| DLL nur bei `--testing` geladen | **übernommen**, durch Laden zur Laufzeit (§8) | |
+| `EinzelInstanz` muss nicht der Kanal werden | **bestätigt: sie wird es nicht** | Sie ist `QObject` mit `QLocalServer` in der Anwendung (`EinzelInstanz.hpp:36`, `:74`) und trägt einen Dateipfad; die Steuerung braucht Anfrage und Antwort, und die Anwendung soll gerade **nicht** lauschen (§4). |
+
+**Abweichung von der Idee:** Dort öffnet die Anwendung den Kanal („`Anwendung.exe --testing`
+startet den Tester daneben und öffnet den Kanal"). Hier lauscht der Tester (§4; von Patrik
+entschieden, E5).
+
+## 13. Reihenfolge der Umsetzung
+
+Gebaut wird erst, wenn alle Teilnehmer im Leerlauf sind und Patrik freigibt.
+
+| Schritt | Wer | Was | Ergebnis |
+|---|---|---|---|
+| 0 | Patrik | Git-Repo hier anlegen, Tag `v0.1.0` (heutiger Stand ohne Steuerung) | Ausgangspunkt |
+| 1 | SH | DLL (Kanal, P 1, S 1.0), die drei Köpfe, eine kleine Gegenprobe-Anwendung ohne Qt; `Sichttest.exe` lauscht; `--selbsttest` prüft Verbinden, Aufruf, unbekannte Aktion, Fristablauf, Ablehnung | im eigenen Repo vollständig prüfbar, ohne LV und CS |
+| 2 | SH | Listen: `aktion:` in Markdown, `vorbereitung`/`aktionen` in JSON, Abbildung der Felder des Comm Studio; Knöpfe ▶ und Rückfall auf Text | Tag `v0.2.0`, erstes Paket |
+| 3 | CC, dann SH | CMakeCraft v0.10.0 (`packages`, External-Art `archive`, `CMakeCraftPackage.cmake`); SH hebt den Pin, schnürt das erste Paket, Patrik lädt es als Release hoch | Anwendungen können beziehen |
+| 4 | LV | `LumiViz.exe --testing`, die ersten Aktionen (LV-1), Listen mit `aktion:`; eigene Kopie `projects/exec/Sichttest` entfernen (LV-2) | LumiViz gesteuert |
+| 5 | SH, CS | Umzug aus `TestProtokollWindow` in den Stufen von §14 (E6) | Werkzeug kann, was das Comm Studio braucht |
+| 6 | CS | `TestProtokollWindow` entfernen — erst nach Stufe 4 von §14 | Comm Studio gleich aufgebaut |
+
+## 14. Umzug aus dem Comm Studio (Vorschlag CS, von Patrik entschieden: E6)
+
+Von allem, was der eingebaute Tester mehr kann, hängt **nur die Test-DB** an der Datenbank des
+Studios (`TestDbSetup.cpp`: `Database`, `BomImport`, `SecureStore`); sie bleibt dort, hinter zwei
+Aktionen. Die Ergebnis-DB `testergebnisse.sqlite` ist eine eigene SQLite-Datei
+(`TestResultsDb.cpp:29–39`) und kann umziehen; der Tester braucht dafür Qt6Sql und das Plugin
+`qsqlite` in seinem Paket.
+
+| Stufe | Was das Werkzeug dann kann | Wirkung |
+|---|---|---|
+| 1 | Felder lesen ohne Wirkung (`tab`, `areas`, `kind: prep`, `restart`, `setup`, `test_db`, Links im Text); Projektdatei `sichttest.projekt.json` (§7) | alle 12 Protokolle laufen im Werkzeug wie heute, ohne Steuerung |
+| 2 | Steuerung: `tab_zeigen`, `sql_einfuegen`, Vorbereitung, `neustart` | Sichttest ohne Datenbank gleichwertig (8 von 12 Protokollen) |
+| 3 | Test-DB über `testdb_einrichten` / `testdb_abbauen` | die übrigen 4 Protokolle |
+| 4 | Ergebnis-DB im Schema des Studios weiterschreiben; Nachtest-Indikator, »Unkritische überspringen«, Befund-Archiv, Statistik | **danach kann `TestProtokollWindow` entfallen** |
+| 5 | Protokoll-Register (unbekannt, verschollen, neu lokalisieren) | Komfort |
+
+Das Schema der Ergebnis-DB bleibt, wie es ist; eine Änderung wird vorher mit CS abgestimmt
+(`UART/…/Main.cpp:744–808` prüft es in einem Selbsttest).

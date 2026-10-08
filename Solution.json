@@ -1,0 +1,44 @@
+{
+    "schemaVersion": "1.0",
+    "solution": {
+        "name": "SichtTestHelper",
+        "version": "0.1.0"
+    },
+    "settings": {
+        "standards": {
+            "cxx_standard": 20
+        },
+        "defaults": {
+            "library_type": "INTERFACE",
+            "executable_type": "GUI"
+        },
+        "sources": {
+            "mode": "explicit"
+        }
+    },
+    "externals": {
+        "Qt6": {
+            "description": "Qt6 UI Framework",
+            "skip": false,
+            "system": true,
+            "package": "Qt6",
+            "components": [ "Core", "Gui", "Widgets" ],
+            "hints": [ "${QT_ROOT}" ]
+        }
+    },
+    "libraries": [],
+    "executables": [
+        {
+            "name": "Sichttest",
+            "description": "Fenster zum Abhaken einer Sichttest-Liste: liest Markdown-Checklisten und *.testprotokoll.json, schreibt Testlog, Report und Screenshots neben die Liste",
+            "skip": false,
+            "type": "GUI",
+            "path": "projects/exec/Sichttest/src",
+            "dependencies": [],
+            "externals": [ "Qt6" ],
+            "platforms": [ "windows", "linux", "macos" ]
+        }
+    ],
+    "apps": [],
+    "tests": []
+}

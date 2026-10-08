@@ -1,0 +1,29 @@
+# Lizenz
+
+SichtTest_Helper steht unter einer **dualen Lizenz**. Du darfst wählen:
+
+- **MIT** — siehe [LICENSE-MIT](LICENSE-MIT)
+- **Apache-2.0** — siehe [LICENSE-APACHE](LICENSE-APACHE)
+
+Beide Lizenzen gelten alternativ, nicht kumulativ: verwende SichtTest_Helper nach der
+Lizenz, die dir besser passt. MIT ist die kürzere und ist mit GPLv2 verträglich;
+Apache-2.0 enthält zusätzlich eine ausdrückliche Patentrechte-Gewährung.
+
+Das gilt für das Werkzeug `Sichttest.exe` ebenso wie für die DLL zur Steuerung und die
+Kopfdateien, die andere Programme einbinden.
+
+## Beiträge
+
+Sofern nicht ausdrücklich anders erklärt, gilt jeder Beitrag, den du
+absichtlich zur Aufnahme in SichtTest_Helper einreichst, als unter denselben beiden
+Lizenzen stehend — ohne zusätzliche Bedingungen.
+
+## Wichtig: Diese Lizenz deckt nur den eigenen Code
+
+`Sichttest.exe` benutzt **Qt 6**, das unter eigenen Lizenzen steht (LGPL-3.0, wahlweise
+kommerziell). Ein veröffentlichtes Paket enthält die Qt-Bibliotheken, die das Werkzeug zum
+Laufen braucht; sie stehen **nicht** unter der obigen Dual-Lizenz. Die DLL zur Steuerung
+und die Kopfdateien enthalten kein Qt.
+
+Das Build-System CMakeCraft wird beim Configure geholt und ist nicht Teil dieses
+Repositorys.

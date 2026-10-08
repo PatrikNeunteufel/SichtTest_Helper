@@ -1,0 +1,14 @@
+# Build und gefetchtes Build-System
+/out/
+/.externals/
+/.vs/
+
+# lokale Pfade (QT_ROOT)
+/CMakeUserPresets.json
+
+# Laeufe des Werkzeugs (Testlog, Report, Screenshots)
+sichttest-logs/
+
+# Claude: lokal (Projektkontext, Handover, Sessions, Sync-Hook)
+/CLAUDE.md
+/.claude/

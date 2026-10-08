@@ -1,0 +1,18 @@
+{
+  "title": "Beispiel-Protokoll (JSON)",
+  "description": "Dasselbe Format wie die Abnahme-Protokolle des UART-Studios: title, description, steps mit id, section, title, text (Markdown). Optional exe.",
+  "steps": [
+    {
+      "id": "bsp-start",
+      "section": "A. Start",
+      "title": "Programm startet",
+      "text": "Das Hauptfenster erscheint ohne Fehlermeldung.\n\n**Pass**, wenn der Titel die Version nennt."
+    },
+    {
+      "id": "bsp-menue",
+      "section": "B. Bedienung",
+      "title": "Kontextmenü",
+      "text": "Rechtsklick auf einen Eintrag zeigt nur, was dort geht."
+    }
+  ]
+}
