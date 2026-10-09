@@ -50,6 +50,16 @@
             "platforms": [ "windows" ]
         },
         {
+            "name": "GegenprobeQt",
+            "description": "Qt-Anwendung für den Selbsttest: benutzt sichttest_steuerung_qt.hpp wie eine geprüfte Anwendung",
+            "skip": false,
+            "type": "CONSOLE",
+            "path": "projects/exec/GegenprobeQt/src",
+            "dependencies": [],
+            "externals": [ "Qt6" ],
+            "platforms": [ "windows" ]
+        },
+        {
             "name": "Sichttest",
             "description": "Fenster zum Abhaken einer Sichttest-Liste: liest Markdown-Checklisten und *.testprotokoll.json, schreibt Testlog, Report und Screenshots neben die Liste",
             "skip": false,

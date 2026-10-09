@@ -320,14 +320,17 @@ namespace sichttest
 
         // Eigener Name, damit der Test einen laufenden Tester nicht stört.
         const QString kanal = QStringLiteral("sichttest-selbsttest-%1").arg(QCoreApplication::applicationPid());
-        auto starte = [&](QProcess& p, const QString& szenario, const QString& kanalName) {
+        auto starteExe = [&](QProcess& p, const QString& exe, const QStringList& argumente, const QString& kanalName) {
             QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
             env.insert(QStringLiteral("SICHTTEST_KANAL"), kanalName);
             // Die DLL soll hier keinen Tester starten.
             env.insert(QStringLiteral("SICHTTEST_EXE"), hier + QStringLiteral("/gibt-es-nicht.exe"));
             p.setProcessEnvironment(env);
             p.setProcessChannelMode(QProcess::MergedChannels);
-            p.start(gegenprobe, { dll, szenario });
+            p.start(exe, argumente);
+        };
+        auto starte = [&](QProcess& p, const QString& szenario, const QString& kanalName) {
+            starteExe(p, gegenprobe, { dll, szenario }, kanalName);
         };
         auto warteAufEnde = [&](QProcess& p, int ms) {
             const bool beendet = warteBis([&] { return p.state() == QProcess::NotRunning; }, ms);
@@ -382,9 +385,10 @@ namespace sichttest
         }
 
         struct Ergebnis { QString status; QString text; bool da = false; };
-        auto rufe = [&](const QString& aktion, const QJsonObject& argumente, int fristMs) {
+        auto rufe = [&](const QString& anwendung, const QString& aktion, const QJsonObject& argumente,
+                        int fristMs) {
             auto e = std::make_shared<Ergebnis>();
-            st.rufe(g, aktion, argumente, QStringLiteral("C:/basis"), fristMs,
+            st.rufe(anwendung, aktion, argumente, QStringLiteral("C:/basis"), fristMs,
                     [e](const QString& status, const QString& text) { e->status = status; e->text = text; e->da = true; });
             warteBis([&] { return e->da; }, 15000);
             return *e;
@@ -393,46 +397,46 @@ namespace sichttest
 
         const QJsonObject arg{ { QStringLiteral("text"), QStringLiteral("Grüße \"zitiert\"\n\\ Ende") },
                                { QStringLiteral("zahl"), 3 } };
-        Ergebnis e = rufe(QStringLiteral("echo"), arg, 5000);
+        Ergebnis e = rufe(g, QStringLiteral("echo"), arg, 5000);
         pruefe(e.status == QLatin1String("ok") && alsObjekt(e.text) == arg,
                QStringLiteral("Aufruf: Argumente kommen unverändert im Rückruf an (Umlaute, Anführungszeichen)"));
 
         const QJsonObject gross{ { QStringLiteral("fuell"), QString(300000, QLatin1Char('x')) } };
-        e = rufe(QStringLiteral("echo"), gross, 5000);
+        e = rufe(g, QStringLiteral("echo"), gross, 5000);
         pruefe(e.status == QLatin1String("ok") && alsObjekt(e.text) == gross,
                QStringLiteral("Aufruf und Antwort mit 300 kB"));
 
-        e = rufe(QStringLiteral("gibt_es_nicht"), {}, 5000);
+        e = rufe(g, QStringLiteral("gibt_es_nicht"), {}, 5000);
         pruefe(e.status == QLatin1String("unbekannt"), QStringLiteral("unbekannte Aktion: Status unbekannt (»%1«)").arg(e.text));
-        e = rufe(QStringLiteral("scheitert"), {}, 5000);
+        e = rufe(g, QStringLiteral("scheitert"), {}, 5000);
         pruefe(e.status == QLatin1String("fehler") && e.text == QLatin1String("absichtlich gescheitert"),
                QStringLiteral("gescheiterte Aktion: Status fehler mit dem Text der Anwendung"));
-        e = rufe(QStringLiteral("ungueltig"), {}, 5000);
+        e = rufe(g, QStringLiteral("ungueltig"), {}, 5000);
         pruefe(e.status == QLatin1String("ungueltig"), QStringLiteral("unpassende Argumente: Status ungueltig"));
 
-        e = rufe(QStringLiteral("pumpt"), {}, 5000);
+        e = rufe(g, QStringLiteral("pumpt"), {}, 5000);
         pruefe(e.status == QLatin1String("ok") && e.text == QLatin1String("0"),
                QStringLiteral("Wiedereintritt: sts_pumpe() im Rückruf führt nichts aus (liefert %1)").arg(e.text));
 
-        e = rufe(QStringLiteral("schlaeft"), {}, 300);
+        e = rufe(g, QStringLiteral("schlaeft"), {}, 300);
         pruefe(e.status == QLatin1String("frist"), QStringLiteral("Fristablauf: »%1«").arg(e.text));
-        e = rufe(QStringLiteral("echo"), arg, 5000);
+        e = rufe(g, QStringLiteral("echo"), arg, 5000);
         pruefe(e.status == QLatin1String("ok") && alsObjekt(e.text) == arg,
                QStringLiteral("die verspätete Antwort wird verworfen, der nächste Aufruf bekommt seine eigene"));
 
-        e = rufe(QStringLiteral("meldet"), {}, 5000);
+        e = rufe(g, QStringLiteral("meldet"), {}, 5000);
         pruefe(e.status == QLatin1String("ok") && meldungen.contains(QStringLiteral("Meldung aus der Aktion")),
                QStringLiteral("sts_melde() kommt als Meldung im Tester an"));
 
-        e = rufe(QStringLiteral("spaet"), {}, 5000);
+        e = rufe(g, QStringLiteral("spaet"), {}, 5000);
         pruefe(e.status == QLatin1String("ok")
                && warteBis([&] { return st.kennt(g, QStringLiteral("nachgemeldet")); }, 2000),
                QStringLiteral("eine nach dem Verbinden angemeldete Aktion wird nachgemeldet"));
-        e = rufe(QStringLiteral("nachgemeldet"), arg, 5000);
+        e = rufe(g, QStringLiteral("nachgemeldet"), arg, 5000);
         pruefe(e.status == QLatin1String("ok") && alsObjekt(e.text) == arg,
                QStringLiteral("die nachgemeldete Aktion lässt sich aufrufen"));
 
-        e = rufe(QStringLiteral("ende"), {}, 5000);
+        e = rufe(g, QStringLiteral("ende"), {}, 5000);
         const QString ausgabe = warteAufEnde(app, 5000);
         pruefe(e.status == QLatin1String("ok") && !ausgabe.isEmpty() && app.exitCode() == 0,
                QStringLiteral("Aktion »ende«: Antwort kommt noch, die Anwendung endet von selbst (Exit %1)")
@@ -440,7 +444,50 @@ namespace sichttest
         pruefe(warteBis([&] { return st.anwendung(g) == nullptr; }, 2000),
                QStringLiteral("der Tester bemerkt das Ende der Verbindung"));
 
-        // 3. Ablehnung: der Tester gibt sich als zu neu aus (spricht nur P 2 und P 3).
+        // 3. Die Köpfe für C++ und für Qt: je eine Anwendung, die nur den Kopf benutzt.
+        {
+            const QString k = QStringLiteral("GegenprobeKopf");
+            QProcess p;
+            starte(p, QStringLiteral("kopf"), kanal);
+            pruefe(warteBis([&] { return st.anwendung(k) != nullptr; }, 10000),
+                   QStringLiteral("Kopf für C++: die Anwendung meldet sich"));
+            e = rufe(k, QStringLiteral("echo"), arg, 5000);
+            pruefe(e.status == QLatin1String("ok") && alsObjekt(e.text) == arg,
+                   QStringLiteral("Kopf für C++: ein Lambda als Aktion bekommt die Argumente"));
+            e = rufe(k, QStringLiteral("wirft"), {}, 5000);
+            pruefe(e.status == QLatin1String("fehler") && e.text.contains(QLatin1String("absichtlich")),
+                   QStringLiteral("Kopf für C++: eine Ausnahme in der Aktion wird zum Status fehler (»%1«)").arg(e.text));
+            e = rufe(k, QStringLiteral("ende"), {}, 5000);
+            const QString text = warteAufEnde(p, 5000);
+            pruefe(e.status == QLatin1String("ok") && !text.isEmpty() && p.exitCode() == 0,
+                   QStringLiteral("Kopf für C++: Gegenprobe meldet keine gescheiterte Prüfung (Exit %1)").arg(p.exitCode()));
+        }
+        {
+            QString gegenprobeQt = hier;
+            gegenprobeQt.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/exec/GegenprobeQt/"));
+            gegenprobeQt += QLatin1String("/GegenprobeQt.exe");
+            pruefe(QFileInfo::exists(gegenprobeQt), QStringLiteral("GegenprobeQt ist gebaut: %1").arg(gegenprobeQt));
+            const QString q = QStringLiteral("GegenprobeQt");
+            QProcess p;
+            starteExe(p, gegenprobeQt, { dll }, kanal);
+            pruefe(warteBis([&] { return st.anwendung(q) != nullptr; }, 10000),
+                   QStringLiteral("Kopf für Qt: die Anwendung meldet sich"));
+            e = rufe(q, QStringLiteral("echo"), arg, 5000);
+            pruefe(e.status == QLatin1String("ok") && alsObjekt(e.text) == arg,
+                   QStringLiteral("Kopf für Qt: die Aktion bekommt die Argumente als QJsonObject"));
+            e = rufe(q, QStringLiteral("faden"), {}, 5000);
+            pruefe(e.status == QLatin1String("ok") && e.text == QLatin1String("gui"),
+                   QStringLiteral("Kopf für Qt: die Aktion läuft im GUI-Thread (»%1«)").arg(e.text));
+            e = rufe(q, QStringLiteral("wirft"), {}, 5000);
+            pruefe(e.status == QLatin1String("fehler") && e.text.contains(QLatin1String("absichtlich")),
+                   QStringLiteral("Kopf für Qt: eine Ausnahme in der Aktion wird zum Status fehler"));
+            e = rufe(q, QStringLiteral("ende"), {}, 5000);
+            const QString text = warteAufEnde(p, 5000);
+            pruefe(e.status == QLatin1String("ok") && !text.isEmpty() && p.exitCode() == 0,
+                   QStringLiteral("Kopf für Qt: Gegenprobe meldet keine gescheiterte Prüfung (Exit %1)").arg(p.exitCode()));
+        }
+
+        // 4. Ablehnung: der Tester gibt sich als zu neu aus (spricht nur P 2 und P 3).
         st.setzeFassungen(STS_P_MAJOR + 1, STS_P_MAJOR + 2);
         {
             QProcess p;

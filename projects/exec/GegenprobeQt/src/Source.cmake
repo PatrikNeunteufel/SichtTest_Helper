@@ -1,9 +1,9 @@
 # ==============================================================================
-# Source.cmake for library src/
+# Source.cmake for executable src/
 # CMake Architecture V2 - Source Collection
 # ==============================================================================
-# Location: projects/libs/SichttestSteuerung/src/Source.cmake
-# Target:   SichttestSteuerung — DLL zur Steuerung der geprüften Anwendung (ohne Qt)
+# Location: projects/exec/GegenprobeQt/src/Source.cmake
+# Target:   GegenprobeQt — Qt-Anwendung, prüft sichttest_steuerung_qt.hpp (Selbsttest)
 # ==============================================================================
 
 dbg(${DBG_OFTEN}
@@ -15,21 +15,16 @@ dbg(${DBG_OFTEN}
 # ==============================================================================
 
 set(_local_sources
-    "${CMAKE_CURRENT_LIST_DIR}/Json.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Kanal.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Sitzung.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/main.cpp"
 )
 
 set(_local_headers
-    "${CMAKE_CURRENT_LIST_DIR}/Json.hpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Kanal.hpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../include/sichttest_steuerung.h"
-    "${CMAKE_CURRENT_LIST_DIR}/../include/sichttest_steuerung.hpp"
-    "${CMAKE_CURRENT_LIST_DIR}/../include/sichttest_steuerung_qt.hpp"
 )
 
+# Nur die Köpfe: die Gegenprobe linkt nicht gegen die DLL, sie lädt sie zur Laufzeit.
 set(_local_includes
     "${CMAKE_CURRENT_LIST_DIR}"
+    "${CMAKE_SOURCE_DIR}/projects/libs/SichttestSteuerung/include"
 )
 
 set(_local_templates

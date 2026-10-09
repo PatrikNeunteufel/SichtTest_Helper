@@ -5,21 +5,20 @@
 // Aufruf:  Gegenprobe <dll> <szenario>
 //            lokal      Prüfungen ohne Tester (Fassungen, Ablehnung durch S, kein Tester)
 //            anwendung  meldet Aktionen an und läuft, bis der Tester »ende« ruft
+//            kopf       wie anwendung, aber über sichttest_steuerung.hpp
 //            start      verbindet nur — die DLL startet dabei den Tester, falls keiner lauscht
 //          Exit = gescheiterte Prüfungen; 100 = DLL nicht geladen,
 //          101 = Aufruf falsch, 102 = ein Einstieg fehlt in der DLL
 //
 // Der Kanal kommt aus SICHTTEST_KANAL, der Tester aus SICHTTEST_EXE (beides liest die DLL).
 
-#include <sichttest_steuerung.h>
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include <sichttest_steuerung.hpp>
 
 #include <shellapi.h>
 
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #include <string>
 
 #pragma comment(lib, "shell32")
@@ -208,6 +207,47 @@ namespace
         d.schliesse(g_sitzung);
     }
 
+    // Dasselbe über den Kopf für C++ (sichttest_steuerung.hpp) statt über die C-Schnittstelle.
+    void kopf(const wchar_t* dllPfad)
+    {
+        std::string grund;
+        pruefe(!sichttest::Sitzung::lade("GegenprobeKopf", "1.2.3", &grund, L"C:\\gibt\\es\\nicht.dll")
+               && !grund.empty(),
+               "Kopf: eine fehlende DLL liefert leer, mit Klartext");
+        std::printf("info %s\n", grund.c_str());
+
+        const std::unique_ptr<sichttest::Sitzung> s = sichttest::Sitzung::lade("GegenprobeKopf", "1.2.3", &grund, dllPfad);
+        pruefe(s != nullptr, "Kopf: DLL geladen, Sitzung angelegt");
+        if (!s) return;
+
+        bool fertig = false;
+        bool gut = s->aktion("echo", "Schickt die Argumente zurück", "beliebig",
+                             [](const char* argumente) { return sichttest::ok(argumente); });
+        gut = gut && s->aktion("wirft", "Wirft eine Ausnahme", "",
+                               [](const char*) -> sichttest::Ergebnis { throw std::runtime_error("absichtlich"); });
+        gut = gut && s->aktion("ende", "Beendet die Gegenprobe", "",
+                               [&fertig](const char*) { fertig = true; return sichttest::ok(); },
+                               STS_BEENDET_ANWENDUNG);
+        pruefe(gut, "Kopf: drei Aktionen als Lambdas angemeldet");
+        pruefe(!s->aktion("echo", "", "", [](const char*) { return sichttest::ok(); }) && !s->letzterFehler().empty(),
+               "Kopf: derselbe Name zweimal wird abgewiesen, mit Klartext");
+
+        s->setzeWecker([] { SetEvent(g_weck); });
+        s->verbinde();
+        const ULONGLONG bis = GetTickCount64() + 30000;
+        while (!fertig && GetTickCount64() < bis)
+        {
+            WaitForSingleObject(g_weck, 100);
+            s->pumpe();
+            if (s->zustand() == STS_GETRENNT || s->zustand() == STS_ABGELEHNT)
+            {
+                std::printf("info %s\n", s->letzterFehler().c_str());
+                break;
+            }
+        }
+        pruefe(fertig, "Kopf: der Tester hat die Aktion ende gerufen");
+    }
+
     void start()
     {
         const sts_konfig k = konfig();
@@ -227,7 +267,7 @@ int main()
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!argv || argc < 3)
     {
-        std::fputs("Aufruf: Gegenprobe <dll> lokal|anwendung|start\n", stderr);
+        std::fputs("Aufruf: Gegenprobe <dll> lokal|anwendung|kopf|start\n", stderr);
         return 101;
     }
 
@@ -256,6 +296,7 @@ int main()
     const std::wstring szenario = argv[2];
     if (szenario == L"lokal") lokal();
     else if (szenario == L"anwendung") anwendung();
+    else if (szenario == L"kopf") kopf(argv[1]);
     else if (szenario == L"start") start();
     else return 101;
 
