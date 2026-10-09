@@ -159,6 +159,9 @@ namespace
 
         pruefe(melde("Mit Leerzeichen", "", "", 0, echo) == STS_UNGUELTIG,
                "sts_melde_aktion: Name außerhalb [a-z0-9_.] ist ungültig");
+        pruefe(melde("vorher", "", "", 0, echo) == STS_OK
+               && std::strstr(d.letzter_fehler(g_sitzung), "sts_melde_aktion") != nullptr,
+               "sts_letzter_fehler: ein Erfolg leert den Text des letzten Fehlschlags nicht");
         pruefe(melde("echo", "", "", 0, echo) == STS_OK && melde("echo", "", "", 0, echo) == STS_UNGUELTIG,
                "sts_melde_aktion: derselbe Name zweimal ist ungültig");
         pruefe(melde("beides", "", "", STS_FRAGT_NACH | STS_WARTET_AUF_MENSCH, echo) == STS_UNGUELTIG,
@@ -223,6 +226,10 @@ namespace
         const std::unique_ptr<sichttest::Sitzung> s = sichttest::Sitzung::lade("GegenprobeKopf", "1.2.3", &grund, dllPfad);
         pruefe(s != nullptr, "Kopf: DLL geladen, Sitzung angelegt");
         if (!s) return;
+        const sichttest::Fassung f = s->fassung();
+        pruefe(f.sMajor == STS_S_MAJOR && f.sMinor == STS_S_MINOR && f.pMin == STS_P_MAJOR && f.pMax == STS_P_MAJOR
+               && f.produkt == STS_PRODUKT,
+               "Kopf: fassung() nennt S, P und Produkt der geladenen DLL");
 
         bool fertig = false;
         bool gut = s->aktion("echo", "Schickt die Argumente zurück", "beliebig",

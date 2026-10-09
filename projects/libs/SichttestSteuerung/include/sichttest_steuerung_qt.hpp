@@ -92,7 +92,10 @@ namespace sichttest
         bool melde(const QString& text) { return m_sitzung->melde(text.toUtf8().constData()); }
         // STS_GETRENNT, STS_VERBINDET, STS_VERBUNDEN oder STS_ABGELEHNT
         int zustand() const { return m_sitzung->zustand(); }
+        // Grund des letzten Fehlschlags; bleibt stehen, bis ein neuer ihn ersetzt (ein Erfolg leert nicht).
         QString letzterFehler() const { return QString::fromStdString(m_sitzung->letzterFehler()); }
+        // Fassung der geladenen DLL, etwa für das Log der Anwendung.
+        Fassung fassung() const { return m_sitzung->fassung(); }
 
     private:
         Steuerung() = default;

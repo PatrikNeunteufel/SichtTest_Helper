@@ -55,6 +55,16 @@ namespace sichttest
     inline Ergebnis ungueltig(const char* text) { return { STS_UNGUELTIG, text ? text : "" }; }
     inline Ergebnis ungueltig(const std::string& text) { return { STS_UNGUELTIG, text }; }
 
+    // Was die geladene DLL über sich sagt (sts_fassung): S, die Spanne von P, das Produkt.
+    struct Fassung
+    {
+        uint16_t sMajor = 0;
+        uint16_t sMinor = 0;
+        uint16_t pMin = 0;
+        uint16_t pMax = 0;
+        std::string produkt;   // Tag des Repos ohne "v", etwa "0.3.1"
+    };
+
     class Sitzung
     {
     public:
@@ -85,6 +95,7 @@ namespace sichttest
                            && s->hole("sts_pumpe", s->m_f.pumpe) && s->hole("sts_antwort_text", s->m_f.antwort_text)
                            && s->hole("sts_melde", s->m_f.melde) && s->hole("sts_zustand", s->m_f.zustand)
                            && s->hole("sts_letzter_fehler", s->m_f.letzter_fehler)
+                           && s->hole("sts_fassung", s->m_f.fassung)
                            && s->hole("sts_schliesse", s->m_f.schliesse);
             if (!alle)
             {
@@ -154,7 +165,17 @@ namespace sichttest
         bool melde(const char* text) { return m_f.melde(m_s, text) == STS_OK; }
         // STS_GETRENNT, STS_VERBINDET, STS_VERBUNDEN oder STS_ABGELEHNT
         int zustand() const { return m_f.zustand(m_s); }
+        // Grund des letzten Fehlschlags; bleibt stehen, bis ein neuer ihn ersetzt (ein Erfolg leert nicht).
         std::string letzterFehler() const { return m_f.letzter_fehler(m_s); }
+        // Fassung der geladenen DLL, etwa für das Log der Anwendung.
+        Fassung fassung() const
+        {
+            Fassung f;
+            const char* produkt = nullptr;
+            m_f.fassung(&f.sMajor, &f.sMinor, &f.pMin, &f.pMax, &produkt);
+            if (produkt) f.produkt = produkt;
+            return f;
+        }
 
     private:
         Sitzung() = default;
@@ -177,6 +198,7 @@ namespace sichttest
             decltype(&sts_melde) melde = nullptr;
             decltype(&sts_zustand) zustand = nullptr;
             decltype(&sts_letzter_fehler) letzter_fehler = nullptr;
+            decltype(&sts_fassung) fassung = nullptr;
             decltype(&sts_schliesse) schliesse = nullptr;
         };
 

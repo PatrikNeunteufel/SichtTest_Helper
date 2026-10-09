@@ -4,7 +4,8 @@
 > Umsetzung von Patrik am 2026-10-08 gestaffelt freigegeben. **Gebaut und veröffentlicht sind die
 > Schritte 1 bis 3 aus §13** (bei SH und CC): DLL mit S 1.0, Protokoll P 1, die drei Köpfe,
 > Aktionen aus Listen, Projektdatei, Stufe 1 aus §14, CMakeCraft v0.10.0, Paket und Release
-> `v0.2.0`; seit `v0.3.0` liegt die Projektdatei unter `.sichttest/` (P2, §7). Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
+> `v0.2.0`; seit `v0.3.0` liegt die Projektdatei unter `.sichttest/` (P2, §7), seit `v0.3.1` nennen die Köpfe
+> die Fassung der geladenen DLL (§8). Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
 > Gezählt wird hier nach §13; im Sync heißen dieselben Abschnitte nach der Freigabe „3 und 4"
 > (CMakeCraft und Paket), „5" (LumiViz) und „6" (Comm Studio) ·
 > **Gehört:** SichtTest_Helper (Sync-Prefix SH) · **Verbindliche Spezifikation** seit 2026-10-09;
@@ -120,6 +121,10 @@ void       sts_antwort_text(sts_antwort* antwort, const char* text);
 sts_status sts_melde(sts_sitzung* s, const char* text);
 /* 0 = getrennt, 1 = verbindet, 2 = verbunden, 3 = abgelehnt (Fassung). */
 int        sts_zustand(sts_sitzung* s);
+/* Grund des letzten Fehlschlags dieser Sitzung. Der Text bleibt stehen, bis ein neuer
+   Fehlschlag ihn ersetzt; ein Erfolg leert ihn nicht. Aussagekräftig ist er nur unmittelbar
+   nach einem Aufruf, der einen Fehler gemeldet hat, oder solange der Zustand getrennt oder
+   abgelehnt ist. (Befund LV, Entscheid Patrik 2026-10-09) */
 const char* sts_letzter_fehler(sts_sitzung* s);
 /* Schreibt wartende Antworten und `tschuess` noch hinaus (höchstens 2 s), dann Ende. */
 void       sts_schliesse(sts_sitzung* s);
@@ -463,6 +468,10 @@ Die Aktionen von LumiViz (fünfzehn, von LV benannt am 08.10.2026, Sync-Nachrich
 `karaoke_laden datei`, `karaoke an|aus`, `titel_laden datei [spielen=ja]`,
 `player start|pause|stopp`. Vier davon ersetzen Ungespeichertes und tragen `STS_FRAGT_NACH`;
 keine öffnet einen Dialog, keine braucht eine spätere Fertigmeldung. Die Namen gehören LumiViz.
+Gebaut sind seit dem 09.10.2026 die ersten vier (`komposition_laden`, `composer`, `edit`, `fit`).
+`komposition_laden` lädt ohne Dialog und **hält**: Composer aus, Stelle 0:00, nichts läuft;
+`composer an` schaltet danach ein (Entscheid Patrik L1 bei LV, gemeldet in
+`LV-20261009-1905-…`).
 
 **Wie sie gefunden wird**
 
@@ -510,6 +519,13 @@ Pfad** aus dem Ordner der Exe, nie über den Suchpfad (so lädt das Comm Studio 
 - Fehlt die DLL, sagt `--testing` das in einem Satz, und die Anwendung läuft weiter.
 - Die Anwendung braucht zum **Bauen nur die Köpfe**; DLL und Tester sind Laufzeit-Beigaben. Eine
   Import-Bibliothek und ein Linker-Schalter für verzögertes Laden entfallen.
+- **Welche DLL geladen ist**, sagen `Sitzung::fassung()` und `Steuerung::fassung()` (ab `v0.3.1`):
+  S, die Spanne von P und das Produkt. Die Datei `VERSION` liegt nur in der Wurzel des Pakets,
+  nicht neben der Exe (Befund LV, Entscheid Patrik 2026-10-09).
+- Der Kopf `sichttest_steuerung.hpp` bindet `<windows.h>` ein und setzt davor
+  `WIN32_LEAN_AND_MEAN` und `NOMINMAX`, falls sie fehlen; beide gelten dann für den Rest der
+  einbindenden Datei. Deshalb gehört der Kopf in **eine** `.cpp` und nicht in einen Kopf der
+  Anwendung (Hinweis LV).
 
 **Fehlt das Paket, fehlen auch die Köpfe** (andere Plattform, E3; oder kein Netz beim ersten
 Holen). Die Anwendung übersetzt dann ohne Steuerung. Ist das Paket da, setzt

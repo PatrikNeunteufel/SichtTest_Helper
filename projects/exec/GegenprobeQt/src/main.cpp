@@ -45,6 +45,8 @@ int main(int argc, char** argv)
     const std::unique_ptr<sichttest::Steuerung> steuerung
         = sichttest::Steuerung::lade("GegenprobeQt", "1.2.3", &grund, args.at(1));
     pruefe(steuerung != nullptr, "Qt-Kopf: DLL geladen, Sitzung angelegt");
+    pruefe(steuerung && steuerung->fassung().sMajor == STS_S_MAJOR && !steuerung->fassung().produkt.empty(),
+           "Qt-Kopf: fassung() nennt S und Produkt der geladenen DLL");
     if (!steuerung)
     {
         std::printf("info %s\n", qUtf8Printable(grund));

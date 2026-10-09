@@ -108,6 +108,10 @@ STS_API void       sts_antwort_text(sts_antwort* antwort, const char* text);
 STS_API sts_status sts_melde(sts_sitzung* s, const char* text);
 /* STS_GETRENNT, STS_VERBINDET, STS_VERBUNDEN oder STS_ABGELEHNT (Fassung). */
 STS_API int        sts_zustand(sts_sitzung* s);
+/* Grund des letzten Fehlschlags dieser Sitzung. Der Text bleibt stehen, bis ein neuer
+   Fehlschlag ihn ersetzt; ein Erfolg leert ihn nicht. Aussagekräftig ist er nur unmittelbar
+   nach einem Aufruf, der einen Fehler gemeldet hat, oder solange der Zustand STS_GETRENNT
+   oder STS_ABGELEHNT ist. */
 STS_API const char* sts_letzter_fehler(sts_sitzung* s);
 /* Schreibt `tschuess` noch hinaus (höchstens 2 s), dann Ende. Nicht aus einem Rückruf rufen. */
 STS_API void       sts_schliesse(sts_sitzung* s);
