@@ -21,7 +21,7 @@
 #define STS_P_MAJOR 1          /* Fassung des Protokolls P zwischen DLL und Tester */
 #define STS_P_MINOR 0
 
-#define STS_PRODUKT "0.1.0"    /* = "version" in Solution.json; der Selbsttest vergleicht beide */
+#define STS_PRODUKT "0.2.0"    /* = "version" in Solution.json; der Selbsttest vergleicht beide */
 
 #if defined(_WIN32) && defined(SichttestSteuerung_EXPORTS)
 #  define STS_API __declspec(dllexport)
