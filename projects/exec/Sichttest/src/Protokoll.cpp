@@ -489,6 +489,7 @@ namespace sichttest
             protokoll.schritte.replace(n, s);
         }
         protokoll.nachbereitungLog = log.value(QStringLiteral("teardown_actions")).toArray();
+        protokoll.steuerung = log.value(QStringLiteral("steuerung")).toObject();
         const QJsonValue aktiv = log.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("active"));
         if (!aktiv.isUndefined() && !protokoll.testDb.isEmpty())
             protokoll.testDb.insert(QStringLiteral("active"), aktiv);
@@ -547,6 +548,7 @@ namespace sichttest
         if (!protokoll.testDb.isEmpty()) log.insert(QStringLiteral("test_db"), protokoll.testDb);
         if (!protokoll.nachbereitungLog.isEmpty())
             log.insert(QStringLiteral("teardown_actions"), protokoll.nachbereitungLog);
+        if (!protokoll.steuerung.isEmpty()) log.insert(QStringLiteral("steuerung"), protokoll.steuerung);
         return log;
     }
 

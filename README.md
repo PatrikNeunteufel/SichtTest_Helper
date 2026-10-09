@@ -202,7 +202,7 @@ für den Ordner der Liste nennt:
 
 | Datei | Inhalt |
 |---|---|
-| `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`, bei ausgelösten Aktionen `actions`; dazu `build` und `summary`. Aus der Liste gehen `setup`, `test_db` und `areas` unverändert mit, die Nachbereitung steht unter `teardown_actions` |
+| `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`, bei ausgelösten Aktionen `actions`; dazu `build` und `summary`. Aus der Liste gehen `setup`, `test_db` und `areas` unverändert mit, die Nachbereitung steht unter `teardown_actions`. War eine Anwendung verbunden, nennt `steuerung` ihren Namen, ihre Version, die Version der DLL (`produkt`), `p`, `s` und den `zustand` der Verbindung |
 | `<Liste>_<Zeit>.report.md` | derselbe Stand zum Lesen: zuerst Fail und Pass mit Befund samt Bemerkung und Bildern, dann Übersprungen, Offen, Pass |
 | `<Liste>_<Zeit>_<Kennung>_<n>.png` | die Screenshots |
 

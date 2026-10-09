@@ -478,6 +478,7 @@ namespace
             m_steuerung.beiAenderung = [this]() {
                 if (!m_steuerung.anwendungen().isEmpty()) m_endeHinweis->hide();
                 bemerkeAnwendungen();
+                merkeSteuerung();
                 zeigeSteuerung();
                 aktualisiereAktionen();
                 weiterNachNeustart();
@@ -675,6 +676,7 @@ namespace
             if (p.anwendung.isEmpty()) p.anwendung = pr.anwendung;
             if (p.exe.isEmpty() && !pr.startExe.isEmpty()) p.exe = pr.startExe;
             m_p = p;
+            merkeSteuerung();
             m_gespeichert.clear();
             m_nachbereitet = false;
             m_exeDatei = findeExeDatei(m_p.exe, pfad);
@@ -1036,6 +1038,30 @@ namespace
             if (von >= 0 && sektion(von) == sektion(offen)) return offen;
             while (offen > 0 && istVorbereitung(schritt(offen - 1))) --offen;
             return offen;
+        }
+
+        // Testlog (§5): mit welcher Anwendung und welcher DLL der Lauf lief, und wie es um die
+        // Verbindung steht. Ohne je verbundene Anwendung trägt das Testlog den Block nicht.
+        void merkeSteuerung()
+        {
+            if (m_p.pfad.isEmpty()) return;
+            if (const Steuerung::Anwendung* a = m_steuerung.anwendung(m_p.anwendung))
+            {
+                m_p.steuerung = QJsonObject{
+                    { QStringLiteral("anwendung"), a->name }, { QStringLiteral("version"), a->version },
+                    { QStringLiteral("produkt"), a->produkt }, { QStringLiteral("p"), a->p },
+                    { QStringLiteral("s"), a->s }, { QStringLiteral("zustand"), QStringLiteral("verbunden") } };
+            }
+            else if (!m_steuerung.letzteAblehnung().isEmpty())
+            {
+                // Eine unverträgliche Fassung hält den Lauf nicht an, steht aber im Testlog.
+                m_p.steuerung = QJsonObject{ { QStringLiteral("zustand"), QStringLiteral("abgelehnt") },
+                                             { QStringLiteral("grund"), m_steuerung.letzteAblehnung() } };
+            }
+            else if (!m_p.steuerung.isEmpty())
+            {
+                m_p.steuerung.insert(QStringLiteral("zustand"), QStringLiteral("getrennt"));
+            }
         }
 
         QString anwendungsName() const
@@ -1578,6 +1604,13 @@ namespace
                        .value(QStringLiteral("actions")).toArray().size() == 4
                    && aufPlatte.value(QStringLiteral("summary")).toObject().value(QStringLiteral("open")).toInt() == 7,
                    QStringLiteral("das Testlog trägt actions[] je Punkt; die Summe zählt sieben offene Punkte"));
+            const QJsonObject st = aufPlatte.value(QStringLiteral("steuerung")).toObject();
+            pruefe(st.value(QStringLiteral("anwendung")).toString() == g
+                   && st.value(QStringLiteral("version")).toString() == QLatin1String("1.2.3")
+                   && st.value(QStringLiteral("produkt")).toString() == QLatin1String(STS_PRODUKT)
+                   && st.value(QStringLiteral("p")).toInt() == 1 && st.value(QStringLiteral("s")).toString() == QLatin1String("1.0")
+                   && st.value(QStringLiteral("zustand")).toString() == QLatin1String("verbunden"),
+                   QStringLiteral("das Testlog trägt den Block steuerung: Anwendung, Version, Produkt, P, S, Zustand"));
 
             // Neustart: die erste Aktion beendet die Anwendung, die zweite läuft nach dem Wiederverbinden.
             zeige(findeSchritt(QStringLiteral("G6")));
@@ -1600,6 +1633,9 @@ namespace
             neu.waitForFinished(2000);
             app.waitForFinished(2000);
             warteBis([&] { return m_steuerung.anwendung(g) == nullptr; }, 2000);
+            pruefe(m_p.steuerung.value(QStringLiteral("zustand")).toString() == QLatin1String("getrennt")
+                   && m_p.steuerung.value(QStringLiteral("anwendung")).toString() == g,
+                   QStringLiteral("nach dem Ende der Anwendung nennt der Block steuerung den Zustand getrennt"));
         }
 
         static bool schreibeDatei(const QString& pfad, const QByteArray& inhalt)

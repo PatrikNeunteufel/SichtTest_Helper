@@ -6,7 +6,10 @@
 > Aktionen aus Listen, Projektdatei, Stufe 1 aus §14, CMakeCraft v0.10.0, Paket und Release
 > `v0.2.0`; seit `v0.3.0` liegt die Projektdatei unter `.sichttest/` (P2, §7), seit `v0.3.1` nennen die Köpfe
 > die Fassung der geladenen DLL (§8), seit `v0.3.2` hat die Rückfrage einen Haken (§3) und der
-> Tester bietet nach dem Ende der Anwendung das Beenden an (§4). Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
+> Tester bietet nach dem Ende der Anwendung das Beenden an (§4), seit `v0.3.3` trägt das Testlog
+> den Block `steuerung` (§5). Die Festlegungen, die beim
+> Bauen fielen (im Sync SH-15), stehen seit dem 2026-10-09 in §3, §4, §6 und §7, jeweils mit
+> „beim Bauen festgelegt" gekennzeichnet. Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
 > Gezählt wird hier nach §13; im Sync heißen dieselben Abschnitte nach der Freigabe „3 und 4"
 > (CMakeCraft und Paket), „5" (LumiViz) und „6" (Comm Studio) ·
 > **Gehört:** SichtTest_Helper (Sync-Prefix SH) · **Verbindliche Spezifikation** seit 2026-10-09;
@@ -102,9 +105,10 @@ typedef struct {
 /* Fassungen der DLL, ohne Sitzung abfragbar. */
 void       sts_fassung(uint16_t* s_major, uint16_t* s_minor,
                        uint16_t* p_major_min, uint16_t* p_major_max,
-                       const char** produkt);                 /* "0.2.0" = Tag des Repos */
+                       const char** produkt);                 /* "0.3.3" = Tag des Repos ohne v */
 
-/* Sitzung anlegen; prüft S (§5). Öffnet noch nichts. */
+/* Sitzung anlegen; prüft S (§5). Öffnet noch nichts. Scheitert es, gibt es keine Sitzung;
+   den Grund nennt dann sts_letzter_fehler(NULL). */
 sts_status sts_oeffne(const sts_konfig* k, sts_sitzung** s);
 /* Aktion anmelden; vor oder nach dem Verbinden (später Angemeldetes wird nachgemeldet). */
 sts_status sts_melde_aktion(sts_sitzung* s, const sts_aktion* a);
@@ -188,6 +192,15 @@ if (QCoreApplication::arguments().contains("--testing")) {
 }
 ```
 
+**Die Klassen der Köpfe** (beim Bauen festgelegt, 2026-10-09): `sichttest::Sitzung` in
+`sichttest_steuerung.hpp` (ohne Qt; Aktionen als Lambdas, die die Argumente als JSON-Text
+bekommen) und `sichttest::Steuerung` in `sichttest_steuerung_qt.hpp` (Argumente als
+`QJsonObject`, Zustellung im GUI-Thread). Beide entstehen über `lade(anwendung, version, …)` und
+sind leer, wenn die DLL fehlt oder die Fassung nicht passt; beide kennen `aktion()`, `verbinde()`,
+`melde()`, `zustand()`, `letzterFehler()` und seit `v0.3.1` `fassung()`. Ergebnisse baut man mit
+`sichttest::ok()`, `sichttest::fehler(text)` und `sichttest::ungueltig(text)`. Eine Ausnahme aus
+einer Aktion wird zum Status `fehler` mit ihrem Text.
+
 **Bewusst nicht in Fassung 1:** Aktionen, die erst später fertig werden (Antwort nach dem
 Rückruf), Abfragen des Zustands der Anwendung durch den Tester, Ereignisse der Anwendung als
 Bedingung eines Schritts. Alles drei lässt sich als kleine Fassung (neue Aufrufe) nachtragen.
@@ -232,6 +245,11 @@ dem Lauschen nimmt. Ein zweiter Tester lauscht nicht, sagt das in der Statuszeil
 ohne Steuerung wie heute. Die DLL benutzt die Windows-API direkt; der Tester benutzt
 `QLocalServer` (unter Windows dieselbe Pipe). Andere Plattformen: §11 E3.
 
+Zwei Umgebungsvariablen liest **nur die DLL**, beide für Entwicklung und Selbsttest (beim Bauen
+festgelegt, 2026-10-09): `SICHTTEST_KANAL` ersetzt den Namen der Pipe, `SICHTTEST_EXE` den Pfad
+des Testers, den die DLL startet (sonst `<Ordner der DLL>\sichttest\Sichttest.exe`, §7.1). Der
+Tester selbst liest keine von beiden; er lauscht immer auf `sichttest-<Benutzer>`.
+
 > Gemessen am 2026-10-09 (SichtTest_Session2): DLL und `QLocalServer` reden über dieselbe Pipe.
 > `QLocalServer` allein lässt aber einen zweiten Tester desselben Benutzers auf demselben Namen
 > zu; deshalb der Mutex (Entscheid Patrik, 2026-10-09). Früherer Wortlaut: „nur eine erste
@@ -239,17 +257,21 @@ ohne Steuerung wie heute. Die DLL benutzt die Windows-API direkt; der Tester ben
 
 **Rahmen:** 4 Byte Länge (little endian) + ein JSON-Objekt in UTF-8. Die DLL bringt dafür einen
 eigenen kleinen JSON-Leser mit; die Argumente einer Aktion reicht sie ungeprüft als Text weiter.
+Welche Nachricht ein Rahmen trägt, steht im Feld **`nachricht`** (`{"nachricht":"hallo", …}`).
 
 | Nachricht | Richtung | Inhalt |
 |---|---|---|
-| `hallo` | DLL → Tester | `p_min`, `p_max` (große Fassungen von P, die die DLL spricht), `s`, `produkt`, `anwendung`, `version`, `exe`, `pid`, `projekt_datei` (falls gesetzt), `aktionen[]` (`name`, `beschreibung`, `parameter`, `schalter[]`) |
-| `willkommen` | Tester → DLL | gewählte Fassung `p`, Fassung des Testers |
+| `hallo` | DLL → Tester | `p_min`, `p_max` (große Fassungen von P, die die DLL spricht), `s`, `produkt`, `anwendung`, `version`, `exe`, `pid`, `projekt_datei` (falls gesetzt), `aktionen[]` (`name`, `beschreibung`, `parameter`, `schalter[]`). Die Schalter stehen als **Wörter**: `fragt_nach`, `nur_erstlauf`, `wartet_auf_mensch`, `beendet_anwendung` |
+| `willkommen` | Tester → DLL | gewählte Fassung `p`, Produktversion des Testers als `tester` |
 | `abgelehnt` | Tester → DLL | Grund als Text (keine gemeinsame Fassung) |
 | `aktionen` | DLL → Tester | nachgemeldete Aktionen |
 | `aufruf` | Tester → DLL | `id`, `aktion`, `argumente{}`, `basis` (Root des Projekts nach §7, sonst der Ordner der Liste). Der Tester reicht jeden Wert **unverändert** durch, auch Pfade; aufgelöst wird in der Anwendung (das Comm Studio löst gegen Repo und Exe-Ordner auf und lässt nur Ziele darunter zu, `TestProtokollWindow.cpp:1407–1417`), `basis` ist nur ein Angebot |
 | `antwort` | DLL → Tester | `id`, `status` (`ok`, `fehler`, `unbekannt`, `ungueltig`), `text` |
 | `meldung` | DLL → Tester | freier Text |
 | `tschuess` | beide | geordnetes Ende |
+
+Eine Nachricht, die die DLL nicht kennt, beantwortet sie mit `antwort`, Status `unbekannt` (mit der
+`id`, falls die Nachricht eine trug); der Tester überliest Unbekanntes (§5).
 
 Der Tester wartet je Aufruf 10 s (in der Liste je Aktion änderbar); für Aktionen mit
 `STS_WARTET_AUF_MENSCH` gilt keine Frist (§3). Bleibt die Antwort aus, gilt §6.3: der Handgriff
@@ -261,7 +283,7 @@ erscheint als Text, eine verspätete Antwort wird verworfen.
 |---|---|---|---|
 | **P** — Protokoll Tester ↔ DLL, `groß.klein` | in Tester und DLL einkompiliert | beim Verbinden (`hallo`) | Tester |
 | **S** — Schnittstelle DLL ↔ Anwendung, `groß.klein` | `STS_S_MAJOR/MINOR` im Kopf, also in der Anwendung; in der DLL; die große Nummer zusätzlich **im Dateinamen** `SichttestSteuerung1.dll` | beim Laden (`sts_oeffne`) | DLL |
-| **Produkt** — Tag des Repos, `v0.2.0` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
+| **Produkt** — Tag des Repos, etwa `v0.3.3` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
 
 **Was die große, was die kleine Nummer ändert**
 
@@ -288,6 +310,10 @@ erscheint als Text, eine verspätete Antwort wird verworfen.
     zu erneuern. Der Lauf geht ohne Steuerung weiter.
 - **In keinem Fall hält eine Unverträglichkeit den Lauf an.** Sie steht sichtbar in der
   Statuszeile des Testers und im Testlog (`steuerung: { anwendung, version, produkt, p, s, zustand }`).
+  Der Block steht im Testlog seit `v0.3.3` (bis dahin nur im Konzept): `zustand` ist `verbunden`
+  oder `getrennt` — dann bleiben die Angaben der zuletzt verbundenen Anwendung stehen — oder
+  `abgelehnt`; dann trägt der Block statt der Angaben den `grund`. Er nennt die Anwendung der
+  Liste. Hat sich in einem Lauf nie eine Anwendung gemeldet, fehlt er.
 
 Die **Aktionen** tragen keine eigene Nummer von dieser Seite: ihre Namen gehören der Anwendung,
 und der Tester erfährt bei jedem Verbinden, welche es gibt.
@@ -354,7 +380,9 @@ Neu, allgemein:
 ```
 
 Dazu `"nachbereitung": [ … ]` an der Wurzel: Aktionen, die der Tester am Ende des Laufs anbietet
-(bei FERTIG und beim Schließen), nie während er auf eine neu startende Anwendung wartet.
+(bei FERTIG und beim Schließen), nie während er auf eine neu startende Anwendung wartet. Im
+Testlog stehen ihre ausgelösten Aktionen an der Wurzel unter `teardown_actions`, in derselben Form
+wie `actions[]` eines Schritts.
 
 Die **Felder des Comm Studio bleiben gültig**. Das Werkzeug kennt sie als Teil seines Formats;
 **welche Aktion** ein Feld auslöst, steht in der Projektdatei unter `abbildung` (§7) — die Namen
@@ -397,6 +425,13 @@ Für alle Fälle dieselbe Regel: **der Lauf hält nie an, der Handgriff erschein
 Jede ausgelöste Aktion steht mit Name, Status und Text im Testlog des Schritts (`actions[]`).
 Das Urteil bleibt immer beim Menschen — eine gescheiterte Aktion macht keinen Punkt zu Fail.
 
+**Mehrere Aktionen an einem Punkt** laufen der Reihe nach, und die Reihe **endet bei der ersten,
+die scheitert** (beim Bauen festgelegt, 2026-10-09): die folgenden laufen nicht, denn sie bauen
+meist auf der gescheiterten auf. Der Tester nennt die gescheiterte Aktion und zeigt den Handgriff.
+Status im Testlog: von der Anwendung `ok`, `fehler`, `unbekannt`, `ungueltig`; vom Tester `frist`
+(keine Antwort), `getrennt` (keine Verbindung), `ausgelassen` (`nur_erstlauf` beim Fortsetzen)
+und `abgebrochen` (der Mensch hat bei `wartet_auf_mensch` abgebrochen).
+
 ### 6.4 Fortsetzen eines Laufs
 
 Wird ein Lauf fortgesetzt (neuer Start des Testers, oder die Anwendung hat sich neu verbunden),
@@ -405,6 +440,10 @@ aus: es wird nur hergestellt, nie abgeräumt (heute `offerMissingSetupTabs`,
 `TestProtokollWindow.cpp:570`). Aktionen mit `STS_FRAGT_NACH` laufen, nach der Rückfrage. Das setzt voraus, dass die übrigen Aktionen der Vorbereitung
 wiederholbar sind — `datei_oeffnen` des Comm Studio antwortet `ok`, wenn die Datei schon offen
 ist, `testdb_einrichten`, wenn die Test-DB schon aktiv ist.
+
+**Woran der Tester das Fortsetzen erkennt** (beim Bauen festgelegt, 2026-10-09): der Lauf trägt
+schon mindestens eine Bewertung (Pass, Pass mit Befund, Fail oder übersprungen). Ein Lauf ohne
+Bewertung gilt als erster Lauf, auch wenn die Vorbereitung schon einmal gelaufen ist.
 
 ### 6.5 Ablage
 
@@ -487,6 +526,10 @@ Gebaut sind seit dem 09.10.2026 die ersten vier (`komposition_laden`, `composer`
   bis zum ersten Ordner `.sichttest`, der eine `sichttest.projekt.json` enthält (so findet er
   heute schon `.claude/handover`). `sts_konfig.projekt_datei` setzt den Pfad ausdrücklich, falls
   die Exe außerhalb des Repos liegt.
+- **Wechsel der Listen bei `hallo`** (beim Bauen festgelegt, 2026-10-09): Meldet sich eine
+  Anwendung, deren Projektdatei eine andere ist als die gerade offene, öffnet der Tester die
+  Listen ihres Projekts — auch wenn er von Hand mit anderen Listen gestartet war. Er wechselt
+  nicht, solange Aktionen laufen, und nicht, wenn die Anwendung keine Projektdatei hat.
 - Start von Hand: `Sichttest <projektdatei>` oder `Sichttest <ordner>` — im zweiten Fall sucht er
   vom Ordner aufwärts. Ohne Projektdatei verhält er sich wie heute.
 - **Eine ausdrücklich genannte Projektdatei** (`Sichttest <projektdatei>`,
@@ -563,7 +606,7 @@ sichttest-vX.Y.Z-win64/
 ├── include/   sichttest_steuerung.h · sichttest_steuerung.hpp · sichttest_steuerung_qt.hpp
 ├── bin/       SichttestSteuerung1.dll
 ├── sichttest/ Sichttest.exe mit seinem Qt
-└── VERSION    drei Zeilen: produkt=0.2.0 · s=1.0 · p=1
+└── VERSION    drei Zeilen: produkt=0.3.3 · s=1.0 · p=1
 ```
 
 Gebaut wird das Paket nur als Release, ohne `.pdb`. Verbindlich stehen S und P im Kopf
@@ -578,7 +621,7 @@ beim Bauen als Define `STS_PRODUKT` aus `Solution.json`, die Anwendung fragt sie
 sich mit jedem Schnüren, auch bei gleichem Inhalt:
 
 ```cmake
-set(SICHTTEST_VERSION "v0.2.0")
+set(SICHTTEST_VERSION "v0.3.3")
 set(SICHTTEST_URL     "https://github.com/PatrikNeunteufel/SichtTest_Helper/releases/download/${SICHTTEST_VERSION}/sichttest-${SICHTTEST_VERSION}-win64.zip")
 set(SICHTTEST_SHA256  "<64 Hex-Zeichen>")
 set(SICHTTEST_FALLBACK_PATHS "../SichtTest_Helper/out/package")

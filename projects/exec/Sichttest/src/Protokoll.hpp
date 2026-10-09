@@ -35,6 +35,7 @@ namespace sichttest
         QString    anwendung;  // Name, unter dem sich die Anwendung meldet; leer = die einzige verbundene
         QJsonArray nachbereitung; // Aktionen für das Ende des Laufs (nur JSON)
         QJsonArray nachbereitungLog; // was davon im Lauf ausgelöst wurde (Testlog: teardown_actions)
+        QJsonObject steuerung; // mit welcher Anwendung und DLL der Lauf lief (Testlog: steuerung, Konzept §5)
         QJsonObject setup;     // Felder des Comm Studio, wie sie in der Liste stehen; gehen
         QJsonObject testDb;    // unverändert ins Testlog (test_db.active bleibt aus altem Lauf)
         QStringList hinweise;  // beim Laden bemerkt: Verweis auf unbekannte Kennung, Verweis im Kreis
