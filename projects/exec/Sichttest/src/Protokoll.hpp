@@ -34,6 +34,9 @@ namespace sichttest
                                // (aus der Liste) und actions[] (was im Lauf ausgelöst wurde)
         QString    anwendung;  // Name, unter dem sich die Anwendung meldet; leer = die einzige verbundene
         QJsonArray nachbereitung; // Aktionen für das Ende des Laufs (nur JSON)
+        QJsonArray nachbereitungLog; // was davon im Lauf ausgelöst wurde (Testlog: teardown_actions)
+        QJsonObject setup;     // Felder des Comm Studio, wie sie in der Liste stehen; gehen
+        QJsonObject testDb;    // unverändert ins Testlog (test_db.active bleibt aus altem Lauf)
         QStringList hinweise;  // beim Laden bemerkt: Verweis auf unbekannte Kennung, Verweis im Kreis
     };
 
@@ -82,11 +85,13 @@ namespace sichttest
     QString alsReport(const Protokoll& protokoll, const QString& gestartet,
                       const QString& exeZeit);
 
-    // Ablage der Läufe eines Protokolls: <Ordner des Protokolls>/sichttest-logs.
+    // Ablage der Läufe eines Protokolls: was das Projekt für seinen Ordner nennt
+    // (Projekt.hpp), sonst <Ordner des Protokolls>/sichttest-logs.
     QString logOrdner(const QString& protokollPfad);
     QString logStamm(const QString& protokollPfad);
     QString neuesterLauf(const QString& protokollPfad);
 
-    // Protokolle eines Ordners: *.testprotokoll.json und jede *.md mit Schritten.
-    QStringList findeProtokolle(const QString& ordner);
+    // Protokolle eines Ordners: *.testprotokoll.json und jede *.md mit Schritten;
+    // mit Muster nur die Dateien, die darauf passen.
+    QStringList findeProtokolle(const QString& ordner, const QString& muster = {});
 }

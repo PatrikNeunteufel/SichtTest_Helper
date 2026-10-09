@@ -63,15 +63,20 @@ Prüfen: `Sichttest.exe --selbsttest <leerer Ordner>` endet mit Exit-Code 0.
 ## Aufruf
 
 ```bash
-Sichttest [datei|ordner]
+Sichttest [datei|ordner|projektdatei]
 Sichttest --pruefe <datei>
 Sichttest --schnapp <png> [datei|ordner]
 Sichttest --selbsttest <leerer ordner>
+Sichttest --steuerung
 ```
 
 - Ohne Argument: der zuletzt benutzte Ordner und das zuletzt benutzte
   Protokoll; beim ersten Start der Ordner `.claude/handover`, vom
   Arbeitsverzeichnis oder vom Ort der Exe aufwärts gesucht.
+- Liegt im Ordner oder darüber eine `sichttest.projekt.json`, gelten deren
+  Listen und Ablage (siehe „Projektdatei").
+- `--steuerung`: so startet die DLL der geprüften Anwendung das Werkzeug, wenn
+  keines lauscht. Es öffnet dann die Listen des Projekts dieser Anwendung.
 - `--pruefe` gibt die erkannten Schritte auf die Standardausgabe.
 - `--schnapp` baut das Fenster auf, legt es als Bild ab und endet.
 - `--selbsttest` legt eine kleine Liste an, bewertet sie über die Knöpfe und
@@ -124,15 +129,49 @@ Verbindung verhält sich die Liste wie eine ohne Aktionen.
 - Scheitert eine Aktion oder kennt die Anwendung sie nicht, steht die Meldung rot am Punkt und
   darunter der Handgriff als Text. Der Lauf hält nie an, das Urteil bleibt beim Menschen.
 - In JSON: `"anwendung"`, `"vorbereitung": [ … ]` an der Wurzel, je Schritt `"aktionen": [ { "aktion":
-  …, "mit": { … }, "text": …, "frist": Sekunden } ]`, `"kind": "prep"` für eine Vorbereitung.
+  …, "mit": { … }, "text": …, "frist": Sekunden } ]`, `"kind": "prep"` für eine Vorbereitung,
+  `"nachbereitung": [ … ]` an der Wurzel für das Ende des Laufs.
+
+### Projektdatei
+
+Eine `sichttest.projekt.json` im Repo der geprüften Anwendung sagt dem Werkzeug, was es über
+das Projekt wissen muss (Beschreibung: `docs/Konzept_Steuerung.md` §7). Pfade sind relativ zur
+Datei; unbekannte Schlüssel werden überlesen.
+
+```json
+{
+  "schema": 1,
+  "anwendung": "MeineAnwendung",
+  "start": { "exe": "out/build/MeineAnwendung.exe", "argumente": ["--testing"] },
+  "listen": [
+    { "ordner": "tests/sichttest", "ablage": "tests/sichttest-logs" },
+    { "ordner": "docs", "muster": "Sichttest_*.md" }
+  ],
+  "abbildung": { "tab": "tab_zeigen titel", "setup.open": "datei_oeffnen pfad" }
+}
+```
+
+| Schlüssel | Bedeutung | fehlt er |
+|---|---|---|
+| `anwendung` | Name, unter dem sich die Anwendung meldet; gilt für Listen, die keinen nennen | die zuletzt verbundene Anwendung |
+| `start` | womit **▶ Exe starten** die Anwendung startet | die Exe aus der Liste, ohne Argumente |
+| `listen[]` | Ordner mit Listen (oder einzelne Listen), je mit `ablage` und `muster` | der Ordner der Projektdatei, Ablage `sichttest-logs/` |
+| `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst | das Feld wird gelesen und als Text gezeigt |
+| `gewichtung` | Dateien des Nachtest-Indikators | wird gelesen, wirkt noch nicht |
+
+Die Felder des UART-Testers bleiben gültig und werden über `abbildung` zu Aktionen:
+`setup.close_all_tabs`, `setup.open`, `test_db` und `test_db.ende` (Vorbereitung und
+Nachbereitung der Liste), `tab` und `restart` (am Schritt), dazu die Links `tab:<Titel>` und
+`sql:<Abfrage>` im Text. Eine Abfrage legt das Werkzeug selbst in die Zwischenablage.
 
 ## Was es schreibt
 
-Neben die Liste, in den Unterordner `sichttest-logs/`:
+Neben die Liste, in den Unterordner `sichttest-logs/` — oder in die Ablage, die das Projekt
+für den Ordner der Liste nennt:
 
 | Datei | Inhalt |
 |---|---|
-| `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`; dazu `build` und `summary` — Format des UART-Testers |
+| `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`, bei ausgelösten Aktionen `actions`; dazu `build` und `summary` — Format des UART-Testers. Aus der Liste gehen `setup`, `test_db` und `areas` unverändert mit, die Nachbereitung steht unter `teardown_actions` |
 | `<Liste>_<Zeit>.report.md` | derselbe Stand zum Lesen: zuerst Fail und Pass mit Befund samt Bemerkung und Bildern, dann Übersprungen, Offen, Pass |
 | `<Liste>_<Zeit>_<Kennung>_<n>.png` | die Screenshots |
 

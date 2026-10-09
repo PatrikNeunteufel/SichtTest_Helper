@@ -127,6 +127,10 @@ namespace
         k.s_minor = STS_S_MINOR;
         k.anwendung = "Gegenprobe";
         k.version = "1.2.3";
+        // Für den Selbsttest: eine Projektdatei ausdrücklich nennen (§7).
+        static char projekt[1024];
+        const DWORD n = GetEnvironmentVariableA("GEGENPROBE_PROJEKT", projekt, sizeof projekt);
+        if (n > 0 && n < sizeof projekt) k.projekt_datei = projekt;
         return k;
     }
 

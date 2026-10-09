@@ -1,5 +1,7 @@
 #include "Protokoll.hpp"
 
+#include "Projekt.hpp"
+
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -8,6 +10,8 @@
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QSet>
+
+#include <functional>
 
 namespace sichttest
 {
@@ -334,16 +338,59 @@ namespace sichttest
         p.anwendung = wurzel.value(QStringLiteral("anwendung")).toString();
         p.nachbereitung = wurzel.value(QStringLiteral("nachbereitung")).toArray();
 
-        // "vorbereitung" an der Wurzel gilt für die ganze Liste: ein Punkt vor dem ersten Abschnitt.
-        const QJsonArray vorbereitung = wurzel.value(QStringLiteral("vorbereitung")).toArray();
-        if (!vorbereitung.isEmpty())
+        // Was für die ganze Liste herzurichten ist, wird ein Punkt vor dem ersten Abschnitt.
+        // Die Felder des Comm Studio (§6.2) stehen dort immer als Text; eine Aktion lösen
+        // sie nur aus, wenn die Projektdatei unter "abbildung" eine nennt.
+        QJsonArray vorbereitung;
+        QStringList texte;
+        auto bilde = [](const char* feld, const QString& text, const std::function<QJsonValue(const QString&)>& wert) {
+            QString aktion;
+            QStringList schluessel;
+            if (!abbildung(projekt(), QLatin1String(feld), aktion, schluessel)) return QJsonObject();
+            QJsonObject mit;
+            for (const QString& k : std::as_const(schluessel)) mit.insert(k, wert(k));
+            return QJsonObject{ { QStringLiteral("aktion"), aktion }, { QStringLiteral("mit"), mit },
+                                { QStringLiteral("text"), text } };
+        };
+
+        // Die Test-DB zuerst: die Tabs aus "setup" fragen beim Öffnen schon die Datenbank ab.
+        p.testDb = wurzel.value(QStringLiteral("test_db")).toObject();
+        if (!p.testDb.isEmpty())
         {
-            QStringList texte;
-            for (const QJsonValue& v : vorbereitung)
-            {
-                const QString t = v.toObject().value(QStringLiteral("text")).toString();
-                if (!t.isEmpty()) texte.append(QStringLiteral("- ") + t);
-            }
+            const QString text = QStringLiteral("Test-DB »%1« einrichten")
+                                     .arg(p.testDb.value(QStringLiteral("name")).toString());
+            texte.append(QStringLiteral("- ") + text);
+            const QJsonObject a = bilde("test_db", text, [&p](const QString& k) { return p.testDb.value(k); });
+            if (!a.isEmpty()) vorbereitung.append(a);
+            const QJsonObject ende = bilde("test_db.ende", QStringLiteral("Test-DB abbauen"),
+                                           [](const QString&) { return QJsonValue(); });
+            if (!ende.isEmpty()) p.nachbereitung.append(ende);
+        }
+        p.setup = wurzel.value(QStringLiteral("setup")).toObject();
+        if (p.setup.value(QStringLiteral("close_all_tabs")).toBool())
+        {
+            const QString text = QStringLiteral("Alle offenen Tabs und das aktive Projekt schließen (ohne Speichern-Nachfragen)");
+            texte.append(QStringLiteral("- ") + text);
+            const QJsonObject a = bilde("setup.close_all_tabs", text, [](const QString&) { return QJsonValue(); });
+            if (!a.isEmpty()) vorbereitung.append(a);
+        }
+        const QJsonArray oeffnen = p.setup.value(QStringLiteral("open")).toArray();
+        for (const QJsonValue& v : oeffnen)
+        {
+            const QString text = QStringLiteral("Öffnen: %1").arg(v.toString());
+            texte.append(QStringLiteral("- ") + text);
+            const QJsonObject a = bilde("setup.open", text, [&v](const QString&) { return v; });
+            if (!a.isEmpty()) vorbereitung.append(a);
+        }
+        const QJsonArray eigene = wurzel.value(QStringLiteral("vorbereitung")).toArray();
+        for (const QJsonValue& v : eigene)
+        {
+            const QString t = v.toObject().value(QStringLiteral("text")).toString();
+            if (!t.isEmpty()) texte.append(QStringLiteral("- ") + t);
+            vorbereitung.append(v);
+        }
+        if (!texte.isEmpty() || !vorbereitung.isEmpty())
+        {
             QJsonObject s;
             s.insert(QStringLiteral("id"), QStringLiteral("V0"));
             s.insert(QStringLiteral("section"), QString());
@@ -361,6 +408,22 @@ namespace sichttest
         {
             QJsonObject s = v.toObject();
             if (istVorbereitung(s)) macheZurVorbereitung(s);
+            // "tab" und "restart" des Comm Studio: mit Abbildung eine Aktion, sonst nur Anzeige.
+            QJsonArray aktionen = s.value(QStringLiteral("aktionen")).toArray();
+            const QString tab = s.value(QStringLiteral("tab")).toString();
+            if (!tab.isEmpty())
+            {
+                const QJsonObject a = bilde("tab", QStringLiteral("Tab »%1« nach vorn holen").arg(tab),
+                                            [&tab](const QString&) { return QJsonValue(tab); });
+                if (!a.isEmpty()) aktionen.prepend(a);
+            }
+            if (s.value(QStringLiteral("restart")).toBool())
+            {
+                const QJsonObject a = bilde("restart", QStringLiteral("Anwendung neu starten"),
+                                            [](const QString&) { return QJsonValue(); });
+                if (!a.isEmpty()) aktionen.append(a);
+            }
+            if (!aktionen.isEmpty()) s.insert(QStringLiteral("aktionen"), aktionen);
             if (!s.contains(QStringLiteral("result")))
                 s.insert(QStringLiteral("result"), QStringLiteral("open"));
             if (!s.contains(QStringLiteral("remark")))
@@ -418,11 +481,17 @@ namespace sichttest
             QJsonObject s = protokoll.schritte.at(n).toObject();
             const auto it = alt.constFind(s.value(QStringLiteral("id")).toString());
             if (it == alt.constEnd()) continue;
-            for (const char* feld : { "result", "remark", "screenshots", "rated", "actions" })
+            // history: das Befund-Archiv des Comm Studio — wird mitgeführt, damit alte Läufe ganz bleiben.
+            for (const char* feld : { "result", "remark", "screenshots", "rated", "actions", "history" })
                 if (it->contains(QLatin1String(feld)))
                     s.insert(QLatin1String(feld), it->value(QLatin1String(feld)));
+            if (istVorbereitung(s)) s.insert(QStringLiteral("result"), QStringLiteral("prep"));
             protokoll.schritte.replace(n, s);
         }
+        protokoll.nachbereitungLog = log.value(QStringLiteral("teardown_actions")).toArray();
+        const QJsonValue aktiv = log.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("active"));
+        if (!aktiv.isUndefined() && !protokoll.testDb.isEmpty())
+            protokoll.testDb.insert(QStringLiteral("active"), aktiv);
     }
 
     Zaehler zaehle(const QJsonArray& schritte)
@@ -474,6 +543,10 @@ namespace sichttest
                    z.offen == 0 ? QDateTime::currentDateTime().toString(Qt::ISODate) : QString());
         log.insert(QStringLiteral("steps"), protokoll.schritte);
         log.insert(QStringLiteral("summary"), summe);
+        if (!protokoll.setup.isEmpty()) log.insert(QStringLiteral("setup"), protokoll.setup);
+        if (!protokoll.testDb.isEmpty()) log.insert(QStringLiteral("test_db"), protokoll.testDb);
+        if (!protokoll.nachbereitungLog.isEmpty())
+            log.insert(QStringLiteral("teardown_actions"), protokoll.nachbereitungLog);
         return log;
     }
 
@@ -542,6 +615,8 @@ namespace sichttest
 
     QString logOrdner(const QString& protokollPfad)
     {
+        const QString ablage = ablageVon(projekt(), protokollPfad);
+        if (!ablage.isEmpty()) return ablage;
         return QFileInfo(protokollPfad).absolutePath() + QStringLiteral("/sichttest-logs");
     }
 
@@ -566,12 +641,13 @@ namespace sichttest
         return logs.isEmpty() ? QString() : ordner.filePath(logs.first());
     }
 
-    QStringList findeProtokolle(const QString& ordner)
+    QStringList findeProtokolle(const QString& ordner, const QString& muster)
     {
         QStringList gefunden;
         const QDir d(ordner);
         const QStringList namen = d.entryList(
-            { QStringLiteral("*.testprotokoll.json"), QStringLiteral("*.md") },
+            muster.isEmpty() ? QStringList{ QStringLiteral("*.testprotokoll.json"), QStringLiteral("*.md") }
+                             : QStringList{ muster },
             QDir::Files, QDir::Name | QDir::Reversed);
         for (const QString& name : namen)
         {

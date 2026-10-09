@@ -87,6 +87,17 @@ namespace sichttest
         return &m_verbindungen.find(s)->app;
     }
 
+    QList<Steuerung::Anwendung> Steuerung::anwendungen() const
+    {
+        QList<Anwendung> alle;
+        for (QLocalSocket* s : m_reihenfolge)
+        {
+            const Verbindung v = m_verbindungen.value(s);
+            if (v.begruesst) alle.append(v.app);
+        }
+        return alle;
+    }
+
     bool Steuerung::kennt(const QString& anwendungName, const QString& aktion) const
     {
         const Anwendung* a = anwendung(anwendungName);
@@ -272,19 +283,27 @@ namespace sichttest
     // Selbsttest
     // ==========================================================================
 
-    bool starteGegenprobe(QProcess& p, const QString& szenario, const QString& kanal)
+    bool gegenprobePfade(QString& exe, QString& dll)
     {
+        // Die Teile liegen im Build-Baum nebeneinander: exec/<Target>/bin/<Konfig>/, libs/<Target>/bin/<Konfig>/.
         const QString hier = QCoreApplication::applicationDirPath();
-        QString gegenprobe = hier;
-        gegenprobe.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/exec/Gegenprobe/"));
-        gegenprobe += QLatin1String("/Gegenprobe.exe");
-        QString dll = hier;
+        exe = hier;
+        exe.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/exec/Gegenprobe/"));
+        exe += QLatin1String("/Gegenprobe.exe");
+        dll = hier;
         dll.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/libs/SichttestSteuerung/"));
         dll += QLatin1String("/SichttestSteuerung.dll");
-        if (!QFileInfo::exists(gegenprobe) || !QFileInfo::exists(dll)) return false;
+        return QFileInfo::exists(exe) && QFileInfo::exists(dll);
+    }
+
+    bool starteGegenprobe(QProcess& p, const QString& szenario, const QString& kanal, const QString& projektDatei)
+    {
+        QString gegenprobe, dll;
+        if (!gegenprobePfade(gegenprobe, dll)) return false;
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         env.insert(QStringLiteral("SICHTTEST_KANAL"), kanal);
-        env.insert(QStringLiteral("SICHTTEST_EXE"), hier + QStringLiteral("/gibt-es-nicht.exe"));
+        env.insert(QStringLiteral("SICHTTEST_EXE"), QStringLiteral("gibt-es-nicht.exe"));
+        if (!projektDatei.isEmpty()) env.insert(QStringLiteral("GEGENPROBE_PROJEKT"), projektDatei);
         p.setProcessEnvironment(env);
         p.setProcessChannelMode(QProcess::MergedChannels);
         p.start(gegenprobe, { dll, szenario });

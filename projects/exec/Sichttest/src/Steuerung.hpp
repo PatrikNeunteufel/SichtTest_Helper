@@ -52,7 +52,9 @@ namespace sichttest
         // Große Fassungen von P, die der Tester spricht. Nur der Selbsttest ändert sie.
         void setzeFassungen(int pMin, int pMax);
 
+        // Leerer Name: die zuletzt verbundene.
         const Anwendung* anwendung(const QString& name) const;
+        QList<Anwendung> anwendungen() const;
         bool kennt(const QString& anwendung, const QString& aktion) const;
 
         // fristMs <= 0: keine Frist (Aktionen mit wartet_auf_mensch).
@@ -105,7 +107,10 @@ namespace sichttest
     // und sich als Anwendung meldet. Gibt die Zahl der gescheiterten Prüfungen zurück.
     int selbsttestSteuerung(QTextStream& aus);
 
-    // Für den Selbsttest: die Gegenprobe aus dem Build-Baum starten, verbunden mit
-    // dem genannten Kanal. false = sie ist nicht gebaut.
-    bool starteGegenprobe(QProcess& p, const QString& szenario, const QString& kanal);
+    // Für den Selbsttest: Gegenprobe und DLL im Build-Baum. false = nicht gebaut.
+    bool gegenprobePfade(QString& exe, QString& dll);
+    // Die Gegenprobe starten, verbunden mit dem genannten Kanal; projektDatei
+    // nennt sie in ihrem hallo. false = sie ist nicht gebaut.
+    bool starteGegenprobe(QProcess& p, const QString& szenario, const QString& kanal,
+                          const QString& projektDatei = {});
 }

@@ -11,6 +11,7 @@
 //          Sichttest --selbsttest <leerer ordner>     (Exit = gescheiterte Prüfungen)
 //          Sichttest --steuerung [datei|ordner]       (so startet ihn die DLL der Anwendung)
 
+#include "Projekt.hpp"
 #include "Protokoll.hpp"
 #include "Steuerung.hpp"
 
@@ -43,6 +44,7 @@
 #include <QProcess>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QSet>
 #include <QSettings>
 #include <QShortcut>
 #include <QSplitter>
@@ -122,6 +124,12 @@ namespace
             {
                 const QFileInfo fi(ziel);
                 if (fi.isDir()) ordner = fi.absoluteFilePath();
+                else if (fi.fileName().endsWith(QLatin1String(".projekt.json"), Qt::CaseInsensitive))
+                {
+                    // Sichttest <projektdatei>: deren Listen (Konzept §7).
+                    m_projektGenannt = fi.absoluteFilePath();
+                    ordner = fi.absolutePath();
+                }
                 else { datei = fi.absoluteFilePath(); ordner = fi.absolutePath(); }
             }
             else
@@ -231,6 +239,7 @@ namespace
 #ifdef Q_OS_WIN
             fehler += selbsttestSteuerung(aus);
             selbsttestAktionen(d, pruefe, klicke);
+            selbsttestProjekt(d, pruefe, klicke);
 #endif
 
             aus << (fehler == 0 ? "Selbsttest bestanden" : "Selbsttest GESCHEITERT") << "\n";
@@ -241,6 +250,14 @@ namespace
         void closeEvent(QCloseEvent* e) override
         {
             if (merkeBemerkung()) schreibe();
+            // Beim Schließen eines begonnenen Laufs die Nachbereitung anbieten; läuft sie,
+            // schließt das Fenster danach von selbst.
+            if (!m_schliesstDanach && hatBewertung() && bieteNachbereitungAn())
+            {
+                m_schliesstDanach = true;
+                e->ignore();
+                return;
+            }
             QSettings().setValue(QStringLiteral("geometrie"), saveGeometry());
             e->accept();
         }
@@ -330,7 +347,9 @@ namespace
             col->addWidget(m_stand);
 
             m_text = new QTextBrowser(rechts);
-            m_text->setOpenExternalLinks(true);
+            // Links `tab:<Titel>` und `sql:<Abfrage>` der Listen des Comm Studio lösen Aktionen aus.
+            m_text->setOpenLinks(false);
+            connect(m_text, &QTextBrowser::anchorClicked, this, [this](const QUrl& url) { folgeLink(url); });
             col->addWidget(m_text, 2);
 
             col->addWidget(new QLabel(
@@ -427,6 +446,7 @@ namespace
             m_steuerungZeile->setTextInteractionFlags(Qt::TextSelectableByMouse);
             lay->addWidget(m_steuerungZeile);
             m_steuerung.beiAenderung = [this]() {
+                bemerkeAnwendungen();
                 zeigeSteuerung();
                 aktualisiereAktionen();
                 weiterNachNeustart();
@@ -492,9 +512,13 @@ namespace
             connect(fail, &QPushButton::clicked, this, [this]() { bewerte(QStringLiteral("fail")); });
             connect(passBefund, &QPushButton::clicked, this, [this]() { bewerte(QStringLiteral("pass_remark")); });
             connect(pass, &QPushButton::clicked, this, [this]() { bewerte(QStringLiteral("pass")); });
-            connect(m_exeBtn, &QPushButton::clicked, this, [this]() {
-                if (!m_exeDatei.isEmpty())
-                    QProcess::startDetached(m_exeDatei, {}, QFileInfo(m_exeDatei).absolutePath());
+            connect(m_exeBtn, &QPushButton::clicked, this, [this]() { starteAnwendung(); });
+            m_startFrist.setSingleShot(true);
+            connect(&m_startFrist, &QTimer::timeout, this, [this]() {
+                if (m_steuerung.anwendung(m_p.anwendung)) return;
+                m_aktionStand->setText(QStringLiteral(
+                    "<span style='color:#d64545;'>gestartet, aber nicht verbunden — läuft die Anwendung schon "
+                    "ohne <code>--testing</code>?</span>"));
             });
             connect(reportBtn, &QPushButton::clicked, this, [this]() {
                 if (merkeBemerkung() || !QFileInfo::exists(reportPfad())) schreibe();
@@ -530,13 +554,25 @@ namespace
         {
             m_ordner = ordner;
             m_combo->clear();
-            const QStringList pfade = ordner.isEmpty() ? QStringList() : findeProtokolle(ordner);
+
+            // Projektdatei (Konzept §7): ausdrücklich genannt, sonst vom Ordner aufwärts gesucht.
+            // Mit ihr zählen ihre Listenordner und ihre Ablage, ohne sie der Ordner wie bisher.
+            if (!m_projektGenannt.isEmpty() && QFileInfo(m_projektGenannt).absolutePath() != ordner)
+                m_projektGenannt.clear();
+            const QString projektDatei = !m_projektGenannt.isEmpty() ? m_projektGenannt : findeProjektDatei(ordner);
+            QString projektFehler;
+            setzeProjekt(projektDatei.isEmpty() ? Projekt() : ladeProjekt(projektDatei, &projektFehler));
+            const Projekt& pr = projekt();
+
+            const QStringList pfade = pr.gueltig() ? protokolleDesProjekts(pr)
+                                    : ordner.isEmpty() ? QStringList() : findeProtokolle(ordner);
             for (const QString& p : pfade)
             {
                 const Protokoll kurz = lade(p);
                 const Zaehler z = zaehleMitLauf(kurz);
                 m_combo->addItem(QStringLiteral("%1   ·   ○ %2  ✗ %3   (%4)")
-                                     .arg(QFileInfo(p).fileName()).arg(z.offen).arg(z.fail)
+                                     .arg(pr.gueltig() ? QDir(pr.ordner).relativeFilePath(p) : QFileInfo(p).fileName())
+                                     .arg(z.offen).arg(z.fail)
                                      .arg(kurz.titel), p);
             }
             if (pfade.isEmpty())
@@ -544,10 +580,15 @@ namespace
                 m_p = {};
                 m_idx = -1;
                 fuelleListe();
-                m_kopfzeile->setText(ordner.isEmpty()
+                m_kopfzeile->setText(!projektFehler.isEmpty() ? projektFehler
+                    : pr.gueltig()
+                    ? QStringLiteral("Die Projektdatei %1 nennt keinen Ordner, in dem Listen liegen.")
+                          .arg(QDir::toNativeSeparators(pr.pfad))
+                    : ordner.isEmpty()
                     ? QStringLiteral("Kein Ordner gewählt — über »Ordner…« einen Ordner mit Sichttest-Listen öffnen.")
                     : QStringLiteral("In %1 liegt keine Liste mit Punkten der Form »- [ ] **A1 Titel:** Text«.")
                           .arg(QDir::toNativeSeparators(ordner)));
+                aktualisiereAktionen();
                 return;
             }
             QSettings().setValue(QStringLiteral("ordner"), ordner);
@@ -596,16 +637,25 @@ namespace
                          QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
                 m_gestartet = QDateTime::currentDateTime().toString(Qt::ISODate);
             }
+            // Nennt die Liste keine Anwendung und keine Exe, gelten die des Projekts.
+            const Projekt& pr = projekt();
+            if (p.anwendung.isEmpty()) p.anwendung = pr.anwendung;
+            if (p.exe.isEmpty() && !pr.startExe.isEmpty()) p.exe = pr.startExe;
             m_p = p;
             m_gespeichert.clear();
+            m_nachbereitet = false;
             m_exeDatei = findeExeDatei(m_p.exe, pfad);
             m_exeZeit = m_exeDatei.isEmpty() ? QString()
                 : QFileInfo(m_exeDatei).lastModified().toString(QStringLiteral("dd.MM.yyyy HH:mm"));
             m_exeBtn->setVisible(!m_exeDatei.isEmpty());
-            m_exeBtn->setToolTip(QDir::toNativeSeparators(m_exeDatei));
+            m_exeBtn->setToolTip(QDir::toNativeSeparators(m_exeDatei)
+                                 + (pr.startArgumente.isEmpty() ? QString()
+                                        : QLatin1Char(' ') + pr.startArgumente.join(QLatin1Char(' '))));
             QSettings().setValue(QStringLiteral("protokoll"), pfad);
 
             QString kopf = QStringLiteral("<b>%1</b>").arg(m_p.titel.toHtmlEscaped());
+            if (pr.gueltig())
+                kopf += QStringLiteral(" · Projekt %1").arg(QDir::toNativeSeparators(pr.pfad).toHtmlEscaped());
             if (!m_p.exe.isEmpty())
                 kopf += m_exeDatei.isEmpty()
                     ? QStringLiteral(" · Exe nicht gefunden: %1").arg(m_p.exe.toHtmlEscaped())
@@ -729,6 +779,10 @@ namespace
             t += zeichen(r) + QLatin1Char(' ') + namen.value(r, QStringLiteral("offen"));
             const QString wann = s.value(QStringLiteral("rated")).toString();
             if (!wann.isEmpty()) t += QStringLiteral(" (%1)").arg(wann);
+            // Felder des Comm Studio, die zum Handgriff gehören.
+            const QString tab = s.value(QStringLiteral("tab")).toString();
+            if (!tab.isEmpty()) t += QStringLiteral(" · Tab: %1").arg(tab);
+            if (s.value(QStringLiteral("restart")).toBool()) t += QStringLiteral(" · mit Neustart der Anwendung");
             m_stand->setText(t);
             const QString f = farbe(r);
             m_stand->setStyleSheet(f.isEmpty() ? QString() : QStringLiteral("color:%1;").arg(f));
@@ -781,6 +835,8 @@ namespace
             m_p.schritte.replace(m_idx, s);
             schreibe();
             if (QListWidgetItem* it = eintrag(m_idx)) beschrifte(it, s);
+            // FERTIG: die Nachbereitung der Liste anbieten (§6.2).
+            if (zaehle(m_p.schritte).offen == 0) bieteNachbereitungAn();
 
             int weiter = ergebnis == QLatin1String("open") ? -1 : naechsterOffene(m_idx);
             if (weiter >= 0)
@@ -1029,7 +1085,7 @@ namespace
 
         void starteAktionen(int logIdx, const QJsonArray& liste)
         {
-            if (m_lauf.aktiv || liste.isEmpty() || logIdx < 0) return;
+            if (m_lauf.aktiv || liste.isEmpty() || (logIdx < 0 && logIdx != kNachbereitung)) return;
             if (!m_steuerung.anwendung(m_p.anwendung)) return;
 
             // Was Zustand verwerfen kann, fragt der Tester vorher — einmal für alle (§3, fragt_nach).
@@ -1051,8 +1107,109 @@ namespace
             m_lauf.idx = logIdx;
             m_lauf.liste = liste;
             m_lauf.token = ++m_token;
-            m_lauf.fortsetzen = istVorbereitung(schritt(logIdx)) && hatBewertung();
+            m_lauf.fortsetzen = logIdx >= 0 && istVorbereitung(schritt(logIdx)) && hatBewertung();
             naechsteAktion();
+        }
+
+        // Nachbereitung der Liste (§6.2): am Ende des Laufs und beim Schließen angeboten,
+        // nie während ein Lauf von Aktionen noch auf die Anwendung wartet. true = läuft.
+        bool bieteNachbereitungAn()
+        {
+            if (m_p.nachbereitung.isEmpty() || m_nachbereitet || m_lauf.aktiv
+                || !m_steuerung.anwendung(m_p.anwendung))
+                return false;
+            m_nachbereitet = true;   // einmal je Lauf fragen, nicht bei jedem Anlass erneut
+            QStringList namen;
+            for (const QJsonValue& v : std::as_const(m_p.nachbereitung))
+                namen.append(v.toObject().value(QStringLiteral("aktion")).toString());
+            if (!m_ohneRueckfrage
+                && QMessageBox::question(this, QStringLiteral("Sichttest"),
+                       QStringLiteral("Nachbereitung in %1 ausführen?\n\n%2")
+                           .arg(anwendungsName(), namen.join(QStringLiteral(", "))))
+                   != QMessageBox::Yes)
+                return false;
+            starteAktionen(kNachbereitung, m_p.nachbereitung);
+            return m_lauf.aktiv;
+        }
+
+        // Die Anwendung starten: mit Projekt dessen Exe samt Argumenten; hatte sie sich in
+        // dieser Sitzung schon gemeldet, die Exe aus ihrem hallo (§7) — sonst holte der
+        // Tester nach dem Absturz einer Debug-Exe die Release-Exe.
+        void starteAnwendung()
+        {
+            const Projekt& pr = projekt();
+            QString exe = m_exeDatei;
+            QStringList argumente;
+            if (pr.gueltig() && !pr.startExe.isEmpty())
+            {
+                exe = m_gemeldeteExe.value(m_p.anwendung, m_exeDatei);
+                argumente = pr.startArgumente;
+            }
+            if (exe.isEmpty()) return;
+            if (!QProcess::startDetached(exe, argumente, QFileInfo(exe).absolutePath()))
+            {
+                m_aktionStand->setText(QStringLiteral("<span style='color:#d64545;'>ließ sich nicht starten: %1</span>")
+                                           .arg(QDir::toNativeSeparators(exe).toHtmlEscaped()));
+                return;
+            }
+            // Nur wer mit Argumenten des Projekts startet, erwartet eine Verbindung (§6.3).
+            if (!argumente.isEmpty() && m_steuerung.lauscht()) m_startFrist.start(m_startFristMs);
+        }
+
+        // Neu verbundene Anwendungen: ihre Exe merken und die Listen ihres Projekts öffnen.
+        void bemerkeAnwendungen()
+        {
+            const QList<Steuerung::Anwendung> alle = m_steuerung.anwendungen();
+            for (const Steuerung::Anwendung& a : alle)
+            {
+                m_gemeldeteExe.insert(a.name, a.exe);
+                if (m_gesehen.contains(a.pid)) continue;
+                m_gesehen.insert(a.pid);
+                m_startFrist.stop();
+                // hallo nennt die Projektdatei ausdrücklich, sonst wird von der Exe aufwärts gesucht.
+                const QString datei = !a.projektDatei.isEmpty() ? a.projektDatei
+                                                                : findeProjektDatei(QFileInfo(a.exe).absolutePath());
+                if (datei.isEmpty() || m_lauf.aktiv || QFileInfo(datei) == QFileInfo(projekt().pfad)) continue;
+                m_projektGenannt = QFileInfo(datei).absoluteFilePath();
+                setzeOrdner(QFileInfo(datei).absolutePath(), {});
+            }
+        }
+
+        // Links der Listen des Comm Studio: `tab:<Titel>` und `sql:<Abfrage>` (ohne //).
+        void folgeLink(const QUrl& url)
+        {
+            const QString art = url.scheme();
+            if (art != QLatin1String("tab") && art != QLatin1String("sql"))
+            {
+                QDesktopServices::openUrl(url);
+                return;
+            }
+            QString wert = QUrl::fromPercentEncoding(url.toEncoded());
+            wert.remove(0, wert.indexOf(QLatin1Char(':')) + 1);
+            while (wert.startsWith(QLatin1Char('/'))) wert.remove(0, 1);
+            wert = wert.trimmed();
+            if (wert.isEmpty()) return;
+            // Die Zwischenablage füllt der Tester selbst (§6.2).
+            if (art == QLatin1String("sql"))
+            {
+                m_kopiert = wert;
+                if (!m_ohneZwischenablage) QGuiApplication::clipboard()->setText(wert);
+            }
+            const QString hand = art == QLatin1String("tab")
+                ? QStringLiteral("Tab »%1« nach vorn holen").arg(wert)
+                : QStringLiteral("Die Abfrage liegt in der Zwischenablage — im SQL-Terminal einfügen");
+            QString aktion;
+            QStringList schluessel;
+            if (m_lauf.aktiv) return;
+            if (!abbildung(projekt(), art, aktion, schluessel) || !m_steuerung.anwendung(m_p.anwendung))
+            {
+                m_aktionStand->setText(QStringLiteral("von Hand: %1").arg(hand.toHtmlEscaped()));
+                return;
+            }
+            const QJsonObject mit{ { schluessel.value(0, QStringLiteral("wert")), wert } };
+            starteAktionen(m_idx, QJsonArray{ QJsonObject{ { QStringLiteral("aktion"), aktion },
+                                                           { QStringLiteral("mit"), mit },
+                                                           { QStringLiteral("text"), hand } } });
         }
 
         void logge(const QJsonObject& aktion, const QString& status, const QString& text)
@@ -1063,6 +1220,11 @@ namespace
             eintrag.insert(QStringLiteral("status"), status);
             eintrag.insert(QStringLiteral("text"), text);
             eintrag.insert(QStringLiteral("at"), QDateTime::currentDateTime().toString(Qt::ISODate));
+            if (m_lauf.idx == kNachbereitung)
+            {
+                m_p.nachbereitungLog.append(eintrag);
+                return;
+            }
             QJsonObject s = schritt(m_lauf.idx);
             QJsonArray log = s.value(QStringLiteral("actions")).toArray();
             log.append(eintrag);
@@ -1112,8 +1274,9 @@ namespace
                                                           : QStringLiteral("läuft: %1 …")).arg(name.toHtmlEscaped()));
                 aktualisiereAktionen();
                 const quint64 token = m_lauf.token;
+                // basis: Ordner der Projektdatei, sonst der Liste — ein Angebot, aufgelöst wird in der Anwendung.
                 m_steuerung.rufe(m_p.anwendung, name, a.value(QStringLiteral("mit")).toObject(),
-                                 QFileInfo(m_p.pfad).absolutePath(), fristMs,
+                                 projekt().gueltig() ? projekt().ordner : QFileInfo(m_p.pfad).absolutePath(), fristMs,
                                  [this, token](const QString& status, const QString& text) {
                                      if (m_lauf.aktiv && m_lauf.token == token) aktionFertig(status, text);
                                  });
@@ -1183,13 +1346,14 @@ namespace
             else
             {
                 QString hand = a.value(QStringLiteral("text")).toString();
-                if (hand.isEmpty()) hand = schritt(idx).value(QStringLiteral("text")).toString();
+                if (hand.isEmpty() && idx >= 0) hand = schritt(idx).value(QStringLiteral("text")).toString();
                 if (hand.size() > 300) hand = hand.left(300) + QStringLiteral(" …");
                 m_aktionStand->setText(QStringLiteral("<span style='color:#d64545;'>%1: %2</span><br>von Hand: %3")
                     .arg(a.value(QStringLiteral("aktion")).toString().toHtmlEscaped(), fehler.toHtmlEscaped(),
                          hand.toHtmlEscaped()));
             }
             aktualisiereAktionen();
+            if (idx == kNachbereitung && m_schliesstDanach) QTimer::singleShot(0, this, &QWidget::close);
         }
 
         // --- Selbsttest der Aktionen -------------------------------------------
@@ -1313,6 +1477,7 @@ namespace
                    QStringLiteral("Vorbereitung: Ausführen und Weiter statt Urteil; ohne Anwendung ist ▶ grau"));
 
             const QString kanal = QStringLiteral("sichttest-selbsttest-%1-liste").arg(QCoreApplication::applicationPid());
+            m_selbsttestKanal = kanal;
             const QString g = QStringLiteral("Gegenprobe");
             QProcess app;
             pruefe(m_steuerung.lausche(kanal) && starteGegenprobe(app, QStringLiteral("anwendung"), kanal)
@@ -1389,9 +1554,191 @@ namespace
             if (neu.state() != QProcess::NotRunning) neu.kill();
             neu.waitForFinished(2000);
             app.waitForFinished(2000);
+            warteBis([&] { return m_steuerung.anwendung(g) == nullptr; }, 2000);
+        }
+
+        static bool schreibeDatei(const QString& pfad, const QByteArray& inhalt)
+        {
+            QDir().mkpath(QFileInfo(pfad).absolutePath());
+            QFile f(pfad);
+            return f.open(QIODevice::WriteOnly) && f.write(inhalt) == inhalt.size();
+        }
+
+        // Projektdatei (§7), Felder des Comm Studio (§6.2) und Nachbereitung, gegen die Gegenprobe.
+        // Läuft nach selbsttestAktionen(): das Fenster lauscht schon.
+        void selbsttestProjekt(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
+        {
+            QString gegenprobe, dll;
+            if (!gegenprobePfade(gegenprobe, dll)) { pruefe(false, QStringLiteral("Gegenprobe ist gebaut")); return; }
+            const QString g = QStringLiteral("Gegenprobe");
+            const QDir wurzel(d.filePath(QStringLiteral("projekt")));
+            QDir(wurzel.absolutePath()).removeRecursively();
+
+            // Alle Felder zeigen auf Aktionen der Gegenprobe: echo schickt die Argumente zurück,
+            // ende beendet sie (wie der Neustart des Comm Studio).
+            const QJsonObject projektJson{
+                { QStringLiteral("schema"), 1 },
+                { QStringLiteral("anwendung"), g },
+                { QStringLiteral("unbekannter_schluessel"), true },
+                { QStringLiteral("start"), QJsonObject{ { QStringLiteral("exe"), gegenprobe },
+                      { QStringLiteral("argumente"), QJsonArray{ dll, QStringLiteral("anwendung") } } } },
+                { QStringLiteral("listen"), QJsonArray{
+                      QJsonObject{ { QStringLiteral("ordner"), QStringLiteral("listen") },
+                                   { QStringLiteral("ablage"), QStringLiteral("ablage/studio") } },
+                      QJsonObject{ { QStringLiteral("ordner"), QStringLiteral("md") },
+                                   { QStringLiteral("muster"), QStringLiteral("Composer_*.md") } },
+                      QJsonObject{ { QStringLiteral("ordner"), QStringLiteral("fehlt") } } } },
+                { QStringLiteral("abbildung"), QJsonObject{
+                      { QStringLiteral("setup.close_all_tabs"), QStringLiteral("echo") },
+                      { QStringLiteral("setup.open"), QStringLiteral("echo pfad") },
+                      { QStringLiteral("tab"), QStringLiteral("echo titel") },
+                      { QStringLiteral("restart"), QStringLiteral("ende") },
+                      { QStringLiteral("sql"), QStringLiteral("echo sql") },
+                      { QStringLiteral("test_db"), QStringLiteral("echo name seed") },
+                      { QStringLiteral("test_db.ende"), QStringLiteral("echo") } } } };
+            const QString projektDatei = wurzel.filePath(QStringLiteral("sichttest.projekt.json"));
+            const QString studio = wurzel.filePath(QStringLiteral("listen/studio.testprotokoll.json"));
+            const QString composer = wurzel.filePath(QStringLiteral("md/Composer_1.md"));
+            bool geschrieben = schreibeDatei(projektDatei, QJsonDocument(projektJson).toJson());
+            geschrieben = geschrieben && schreibeDatei(studio, QByteArray(R"({
+                "title": "Studio", "description": "Felder des Comm Studio",
+                "test_db": { "name": "studiotest", "_hinweis": "Kommentar", "seed": [ { "projekt": "P" } ] },
+                "setup": { "close_all_tabs": true, "open": [ "examples/demo.project.json" ] },
+                "steps": [
+                  { "id": "s-00", "kind": "prep", "section": "A", "title": "Vorbereiten", "text": "Tab öffnen.", "areas": ["db"] },
+                  { "id": "s-01", "section": "A", "title": "Eins", "tab": "Datenbank", "areas": ["db", "csv"],
+                    "text": "Siehe [Tab](tab:Datenbank) und [Abfrage](sql:SELECT%20*%20FROM%20t)." },
+                  { "id": "s-02", "section": "A", "title": "Zwei", "restart": true, "areas": [], "text": "Neustart." } ] })"));
+            geschrieben = geschrieben && schreibeDatei(composer, "# Composer\n\n- [ ] **C1 Eins:** Text.\n");
+            geschrieben = geschrieben && schreibeDatei(wurzel.filePath(QStringLiteral("md/Notiz.md")),
+                                                       "# Notiz\n\n- [ ] **N1 Eins:** passt nicht auf das Muster.\n");
+            pruefe(geschrieben, QStringLiteral("Projekt für den Selbsttest angelegt"));
+
+            // Der Ordner einer Liste genügt: die Projektdatei wird aufwärts gefunden.
+            setzeOrdner(wurzel.filePath(QStringLiteral("listen")), studio);
+            pruefe(projekt().gueltig() && QFileInfo(projekt().pfad) == QFileInfo(projektDatei),
+                   QStringLiteral("Projektdatei vom Listenordner aufwärts gefunden"));
+            pruefe(m_combo->count() == 2 && m_combo->findData(studio) >= 0 && m_combo->findData(composer) >= 0,
+                   QStringLiteral("Listen aus zwei Ordnern; das Muster gilt, ein fehlender Ordner wird übergangen (gezählt %1)")
+                       .arg(m_combo->count()));
+            pruefe(QFileInfo(logOrdner(studio)) == QFileInfo(wurzel.filePath(QStringLiteral("ablage/studio")))
+                   && QFileInfo(logOrdner(composer)) == QFileInfo(wurzel.filePath(QStringLiteral("md/sichttest-logs"))),
+                   QStringLiteral("Ablage je Listenordner; ohne Angabe sichttest-logs neben der Liste"));
+
+            const int v0 = findeSchritt(QStringLiteral("V0"));
+            pruefe(m_p.pfad == studio && m_p.anwendung == g && v0 == 0 && m_idx == 0
+                   && aktionenVon(m_p, v0).size() == 3 && m_p.nachbereitung.size() == 1
+                   && schritt(v0).value(QStringLiteral("text")).toString().contains(QStringLiteral("Test-DB »studiotest« einrichten"))
+                   && schritt(v0).value(QStringLiteral("text")).toString().contains(QStringLiteral("Öffnen: examples/demo.project.json")),
+                   QStringLiteral("test_db und setup werden die Vorbereitung der Liste: Text und drei Aktionen; Anwendung aus dem Projekt"));
+            pruefe(aktionenVon(m_p, findeSchritt(QStringLiteral("s-01"))).size() == 1
+                   && aktionenVon(m_p, findeSchritt(QStringLiteral("s-02"))).at(0).toObject()
+                          .value(QStringLiteral("aktion")).toString() == QLatin1String("ende")
+                   && zaehle(m_p.schritte).offen == 2,
+                   QStringLiteral("tab und restart werden Aktionen des Schritts; zwei Vorbereitungen zählen nicht mit"));
+            {
+                const Projekt merk = projekt();
+                setzeProjekt({});
+                const Protokoll ohne = lade(studio);
+                setzeProjekt(merk);
+                pruefe(ohne.schritte.size() == 4 && aktionenVon(ohne, 0).isEmpty() && aktionenVon(ohne, 2).isEmpty()
+                       && ohne.nachbereitung.isEmpty()
+                       && ohne.schritte.at(0).toObject().value(QStringLiteral("text")).toString().contains(QLatin1String("studiotest")),
+                       QStringLiteral("ohne Abbildung werden die Felder gelesen und als Text gezeigt, ohne Aktion"));
+            }
+
+            // Start über das Projekt; die Gegenprobe erbt den Kanal aus der Umgebung.
+            qputenv("SICHTTEST_KANAL", m_selbsttestKanal.toUtf8());
+            qputenv("SICHTTEST_EXE", "gibt-es-nicht.exe");
+            pruefe(klicke(QStringLiteral("▶ Exe starten"))
+                   && warteBis([&] { return m_steuerung.anwendung(g) != nullptr; }, 10000),
+                   QStringLiteral("»Exe starten« startet die Anwendung mit den Argumenten des Projekts, sie verbindet sich"));
+
+            auto status = [](const QJsonArray& log, int n) { return log.at(n).toObject().value(QStringLiteral("status")).toString(); };
+            auto text = [](const QJsonArray& log, int n) { return log.at(n).toObject().value(QStringLiteral("text")).toString(); };
+            zeige(v0);
+            klicke(QStringLiteral("▶ Ausführen"));
+            warteBis([&] { return !m_lauf.aktiv; }, 15000);
+            QJsonArray log = ausgeloest(QStringLiteral("V0"));
+            pruefe(log.size() == 3 && status(log, 2) == QLatin1String("ok")
+                   && text(log, 0).contains(QLatin1String("\"projekt\":\"P\"")) && text(log, 0).contains(QLatin1String("studiotest"))
+                   && text(log, 2).contains(QLatin1String("examples/demo.project.json")),
+                   QStringLiteral("Vorbereitung: Test-DB (mit seed) zuerst, dann Tabs schließen, dann öffnen"));
+
+            m_ohneZwischenablage = true;
+            zeige(findeSchritt(QStringLiteral("s-01")));
+            folgeLink(QUrl(QStringLiteral("tab:Datenbank")));
+            warteBis([&] { return !m_lauf.aktiv; }, 5000);
+            folgeLink(QUrl(QStringLiteral("sql:SELECT%20*%20FROM%20t")));
+            warteBis([&] { return !m_lauf.aktiv; }, 5000);
+            log = ausgeloest(QStringLiteral("s-01"));
+            pruefe(log.size() == 2 && text(log, 0).contains(QLatin1String("\"titel\":\"Datenbank\""))
+                   && text(log, 1).contains(QLatin1String("SELECT * FROM t")) && m_kopiert == QLatin1String("SELECT * FROM t"),
+                   QStringLiteral("Links tab: und sql: im Text lösen die abgebildete Aktion aus; die Abfrage geht in die Zwischenablage"));
+
+            pruefe(bieteNachbereitungAn() && warteBis([&] { return !m_lauf.aktiv; }, 5000)
+                   && m_p.nachbereitungLog.size() == 1 && status(m_p.nachbereitungLog, 0) == QLatin1String("ok"),
+                   QStringLiteral("Nachbereitung der Liste läuft und steht im Lauf"));
+            const QJsonObject aufPlatte = leseJson(m_logPfad);
+            pruefe(QFileInfo(m_logPfad).absolutePath() == QFileInfo(wurzel.filePath(QStringLiteral("ablage/studio"))).absoluteFilePath()
+                   && aufPlatte.value(QStringLiteral("teardown_actions")).toArray().size() == 1
+                   && aufPlatte.value(QStringLiteral("setup")).toObject().value(QStringLiteral("close_all_tabs")).toBool()
+                   && aufPlatte.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("name")).toString() == QLatin1String("studiotest")
+                   && aufPlatte.value(QStringLiteral("steps")).toArray().at(2).toObject().value(QStringLiteral("areas")).toArray().size() == 2,
+                   QStringLiteral("Testlog liegt in der Ablage des Projekts und trägt setup, test_db, areas und teardown_actions"));
+
+            zeige(findeSchritt(QStringLiteral("s-02")));
+            klicke(QStringLiteral("▶ Herstellen"));
+            pruefe(warteBis([&] { return !m_lauf.aktiv && m_steuerung.anwendung(g) == nullptr; }, 10000)
+                   && status(ausgeloest(QStringLiteral("s-02")), 0) == QLatin1String("ok"),
+                   QStringLiteral("restart: die abgebildete Aktion beendet die Anwendung, ohne dass der Tester einen Fehler meldet"));
+
+            // Meldet sich eine Anwendung mit einer Projektdatei im hallo, öffnet der Tester deren Listen.
+            const QDir zwei(d.filePath(QStringLiteral("projekt2")));
+            QDir(zwei.absolutePath()).removeRecursively();
+            const QString projektZwei = zwei.filePath(QStringLiteral("sichttest.projekt.json"));
+            const QJsonObject zweiJson{
+                { QStringLiteral("anwendung"), g },
+                { QStringLiteral("start"), QJsonObject{ { QStringLiteral("exe"), gegenprobe },
+                      { QStringLiteral("argumente"), QJsonArray{ QStringLiteral("keine.dll"), QStringLiteral("nichts") } } } } };
+            schreibeDatei(projektZwei, QJsonDocument(zweiJson).toJson());
+            schreibeDatei(zwei.filePath(QStringLiteral("Zwei.md")), "# Zwei\n\n- [ ] **Z1 Eins:** Text.\n");
+            QProcess app;
+            starteGegenprobe(app, QStringLiteral("anwendung"), m_selbsttestKanal, projektZwei);
+            pruefe(warteBis([&] { return m_steuerung.anwendung(g) != nullptr; }, 10000)
+                   && QFileInfo(projekt().pfad) == QFileInfo(projektZwei) && m_p.pfad.endsWith(QLatin1String("Zwei.md")),
+                   QStringLiteral("hallo nennt eine Projektdatei: der Tester öffnet deren Listen (ohne listen: der Ordner der Datei)"));
+            bool beendet = false;
+            m_steuerung.rufe(g, QStringLiteral("ende"), {}, {}, 5000, [&beendet](const QString&, const QString&) { beendet = true; });
+            warteBis([&] { return beendet && app.state() == QProcess::NotRunning; }, 5000);
+            if (app.state() != QProcess::NotRunning) app.kill();
+            app.waitForFinished(2000);
+            warteBis([&] { return m_steuerung.anwendung(g) == nullptr; }, 2000);
+
+            // Gestartet, aber kein hallo: eigene Meldung (§6.3). Hier endet die Exe sofort.
+            m_startFristMs = 300;
+            m_gemeldeteExe.clear();
+            klicke(QStringLiteral("▶ Exe starten"));
+            pruefe(warteBis([&] { return m_aktionStand->text().contains(QLatin1String("gestartet, aber nicht verbunden")); }, 3000),
+                   QStringLiteral("gestartet, aber nicht verbunden: der Tester sagt es"));
+
+            setzeProjekt({});
             m_steuerung.beiAenderung = nullptr;
             m_steuerung.beiMeldung = nullptr;
         }
+
+        static constexpr int kNachbereitung = -2;   // Lauf.idx: die Aktionen gehören zur Liste, nicht zu einem Punkt
+
+        QString   m_kopiert;                  // zuletzt in die Zwischenablage gelegte Abfrage
+        bool      m_ohneZwischenablage = false;   // nur der Selbsttest: die Zwischenablage des Menschen bleibt
+        QString   m_selbsttestKanal;
+        bool      m_nachbereitet = false;     // in diesem Lauf schon angeboten
+        bool      m_schliesstDanach = false;
+        QString   m_projektGenannt;           // ausdrücklich genannte Projektdatei (Aufruf oder hallo)
+        QHash<QString, QString> m_gemeldeteExe;   // Anwendung → Exe aus ihrem letzten hallo
+        QSet<qint64> m_gesehen;               // Pids, deren Verbindung schon ausgewertet ist
+        QTimer    m_startFrist;
+        int       m_startFristMs = 15000;
 
         Lauf      m_lauf;
         quint64   m_token = 0;
