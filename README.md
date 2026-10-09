@@ -1,23 +1,26 @@
 # SichtTest_Helper
 
-Ein eigenes Fenster zum Abhaken einer Sichttest-Liste. Es läuft **neben** dem
-Programm, das geprüft wird, und kennt dieses Programm nicht: Punkt für Punkt
-**Pass**, **Pass mit Befund**, **Fail** oder **Überspringen**, dazu eine
-Bemerkung und Screenshots. Das Ergebnis ist ein Testlog und ein Report, die
-ein Mensch und Claude lesen.
+**Sichttest** ist ein eigenständiges Programm, mit dem ein Mensch Sichttests
+durchführt. Es zeigt eine Liste Punkt für Punkt und nimmt je Punkt ein Urteil
+auf — **Pass**, **Pass mit Befund**, **Fail** oder **Überspringen** —, dazu
+eine Bemerkung und Screenshots. Das Ergebnis ist ein Testlog und ein Report,
+die ein Mensch und Claude lesen. Das Programm läuft **neben** der Anwendung,
+die geprüft wird, und braucht von ihr nichts.
+
+**Zusätzlich** kann Sichttest die geprüfte Anwendung steuern: eine Vorlage
+laden, ein Tab oder Panel nach vorn holen, einen Zustand herstellen. Dafür
+bindet die Anwendung eine kleine DLL ein, die dieses Projekt mitliefert, und
+meldet ihre Aktionen an; die Listen nennen dann je Punkt, was auszulösen ist.
+Ohne die DLL arbeitet das Werkzeug wie bisher, und auch mit ihr bleibt jeder
+Handgriff als Text stehen — das Urteil fällt immer der Mensch.
+Beschreibung: `docs/Konzept_Steuerung.md`.
 
 **Herkunft:** Vorbild ist das Abnahme-Protokoll des UART-Studios
 (`UART/gui/Comm_Studio/TestProtokollWindow`), dort fest ins Studio eingebaut.
 Diese eigenständige Fassung entstand am 2026-10-03 in LumiViz
 (`projects/exec/Sichttest`, Session 93) und wurde von dort hierher kopiert.
-Seit dem 2026-10-08 wird das Werkzeug **hier** entwickelt und gebaut. Die
-Kopie in LumiViz besteht noch (Abweichung: zwei Zeilen); sie entfällt, sobald
-LumiViz das Werkzeug von hier bezieht.
-
-**Geplant:** Das Werkzeug soll die geprüfte Anwendung steuern (Vorlage laden,
-Tab oder Panel wechseln, Zustand herstellen). Dazu baut dieses Projekt eine
-DLL, die die Anwendungen einbinden. Stand: Konzept, nichts gebaut —
-`docs/Konzept_Steuerung.md`, Ausgangspunkt `docs/Idee_Steuerung_der_Anwendung.md`.
+Seit dem 2026-10-08 wird das Werkzeug **hier** entwickelt und gebaut; die
+Kopie in LumiViz entfällt mit dessen Anbindung.
 
 ## Aufbau
 
@@ -28,15 +31,21 @@ SichtTest_Helper/
 ├── cmakecraft.pin              gepinnte CMakeCraft-Version
 ├── CMakePresets.json           Presets (aus LumiViz übernommen, ungekürzt)
 ├── CMakeUserPresets.json       lokal: QT_ROOT (nicht versioniert)
-├── Solution.json               was gebaut wird: Executable Sichttest, Qt6
+├── Solution.json               was gebaut und geschnürt wird, Version
 ├── LICENSE, LICENSE-MIT, LICENSE-APACHE
-├── beispiele/                  eine Liste in Markdown, eine in JSON
-├── docs/                       Idee und Konzept der Steuerung
-├── projects/libs/              die DLL zur Steuerung (geplant, noch leer)
-└── projects/exec/Sichttest/src/
-    ├── main.cpp                Fenster, Aufrufe, Selbsttest
-    ├── Protokoll.hpp/.cpp      Listen lesen, Testlog und Report schreiben (ohne Widgets)
-    └── Source.cmake            Quellenliste
+├── beispiele/                  Listen in Markdown und JSON, eine mit Aktionen
+├── docs/                       Idee und Konzept der Steuerung, Einrichtung und Veröffentlichung
+├── packaging/VERSION.in        Schablone der Datei VERSION im Paket
+├── projects/exec/Sichttest/src/        das Werkzeug
+│   ├── main.cpp                Fenster, Aufrufe, Selbsttest
+│   ├── Protokoll.hpp/.cpp      Listen lesen, Testlog und Report schreiben (ohne Widgets)
+│   ├── Projekt.hpp/.cpp        die Projektdatei sichttest.projekt.json
+│   ├── Steuerung.hpp/.cpp      Anwendungen annehmen, Aktionen aufrufen
+│   └── Kanal.hpp/.cpp          die Pipe, auf der das Werkzeug lauscht
+├── projects/libs/SichttestSteuerung/   die DLL für die geprüfte Anwendung (ohne Qt)
+│   ├── include/                die drei Köpfe: C, C++, Qt
+│   └── src/                    Kanal, Protokoll, Schnittstelle
+└── projects/exec/Gegenprobe/, GegenprobeQt/   kleine Anwendungen für den Selbsttest
 ```
 
 Lokal und nicht versioniert: `out/`, `.externals/` (geholtes CMakeCraft),
