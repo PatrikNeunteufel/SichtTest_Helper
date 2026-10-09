@@ -9,8 +9,10 @@
 //          Sichttest --pruefe <datei>     (Schritte auf die Standardausgabe)
 //          Sichttest --schnapp <png> [datei|ordner]   (Bild des Fensters)
 //          Sichttest --selbsttest <leerer ordner>     (Exit = gescheiterte Prüfungen)
+//          Sichttest --steuerung [datei|ordner]       (so startet ihn die DLL der Anwendung)
 
 #include "Protokoll.hpp"
+#include "Steuerung.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -130,6 +132,10 @@ namespace
                 }
             }
             setzeOrdner(ordner, datei);
+
+            // Der Tester lauscht immer (Konzept §4); der Selbsttest ruft starte() nicht
+            // und nimmt einen eigenen Kanal.
+            m_steuerung.lausche(KanalServer::kanalName());
         }
 
         // Selbsttest: eine kleine Liste im Ordner anlegen, sie über die Knöpfe
@@ -217,6 +223,10 @@ namespace
             QFile original(liste);
             pruefe(original.open(QIODevice::ReadOnly) && original.readAll().contains("- [ ] **A1 Eins:**"),
                    QStringLiteral("die Liste selbst ist unverändert"));
+
+#ifdef Q_OS_WIN
+            fehler += selbsttestSteuerung(aus);
+#endif
 
             aus << (fehler == 0 ? "Selbsttest bestanden" : "Selbsttest GESCHEITERT") << "\n";
             return fehler;
@@ -384,6 +394,17 @@ namespace
             pfadBtn->setToolTip(QStringLiteral("Den Pfad des Reports in die Zwischenablage — zum Einfügen im Chat."));
             fuss->addWidget(pfadBtn);
             lay->addLayout(fuss);
+
+            m_steuerungZeile = new QLabel(this);
+            m_steuerungZeile->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+            m_steuerungZeile->setStyleSheet(QStringLiteral("color:#8a8a8a;"));
+            m_steuerungZeile->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            lay->addWidget(m_steuerungZeile);
+            m_steuerung.beiAenderung = [this]() { m_steuerungZeile->setText(m_steuerung.zustandsText()); };
+            m_steuerung.beiMeldung = [this](const QString& anwendung, const QString& text) {
+                m_steuerungZeile->setText(QStringLiteral("%1 — %2: %3")
+                                              .arg(m_steuerung.zustandsText(), anwendung, text));
+            };
 
             connect(m_combo, &QComboBox::activated, this, [this](int i) {
                 oeffne(m_combo->itemData(i).toString(), false);
@@ -872,6 +893,9 @@ namespace
         QListWidget*    m_bilder = nullptr;
         QLabel*         m_summe = nullptr;
         QPushButton*    m_exeBtn = nullptr;
+        QLabel*         m_steuerungZeile = nullptr;
+
+        Steuerung m_steuerung;
     };
 
     // Schritte einer Datei ausgeben — zum Nachsehen, was der Leser erkennt.
@@ -907,7 +931,10 @@ int main(int argc, char** argv)
     QCoreApplication::setOrganizationName(QStringLiteral("SichtTestHelper"));
     QCoreApplication::setApplicationName(QStringLiteral("Sichttest"));
 
-    const QStringList args = QCoreApplication::arguments();
+    // --steuerung: so startet die DLL den Tester, wenn keiner lauscht (Konzept §4).
+    // Er lauscht ohnehin; das Argument ist kein Ziel.
+    QStringList args = QCoreApplication::arguments();
+    args.removeAll(QStringLiteral("--steuerung"));
     if (args.size() >= 3 && args.at(1) == QLatin1String("--pruefe"))
         return pruefe(args.at(2));
 

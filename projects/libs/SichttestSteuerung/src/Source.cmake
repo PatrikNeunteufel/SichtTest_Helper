@@ -1,9 +1,9 @@
 # ==============================================================================
-# Source.cmake for executable src/
+# Source.cmake for library src/
 # CMake Architecture V2 - Source Collection
 # ==============================================================================
-# Location: projects/exec/Sichttest/src/Source.cmake
-# Target:   Sichttest — Fenster zum Abhaken einer Sichttest-Liste (Session 93)
+# Location: projects/libs/SichttestSteuerung/src/Source.cmake
+# Target:   SichttestSteuerung — DLL zur Steuerung der geprüften Anwendung (ohne Qt)
 # ==============================================================================
 
 dbg(${DBG_OFTEN}
@@ -15,22 +15,19 @@ dbg(${DBG_OFTEN}
 # ==============================================================================
 
 set(_local_sources
-    "${CMAKE_CURRENT_LIST_DIR}/main.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/Json.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/Kanal.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Protokoll.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Steuerung.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/Sitzung.cpp"
 )
 
 set(_local_headers
+    "${CMAKE_CURRENT_LIST_DIR}/Json.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/Kanal.hpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Protokoll.hpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Steuerung.hpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../include/sichttest_steuerung.h"
 )
 
-# Nur der Kopf der DLL (Fassungen von S und P): der Tester lädt die DLL nie.
 set(_local_includes
     "${CMAKE_CURRENT_LIST_DIR}"
-    "${CMAKE_SOURCE_DIR}/projects/libs/SichttestSteuerung/include"
 )
 
 set(_local_templates

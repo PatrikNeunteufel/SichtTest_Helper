@@ -22,12 +22,33 @@
             "skip": false,
             "system": true,
             "package": "Qt6",
-            "components": [ "Core", "Gui", "Widgets" ],
+            "components": [ "Core", "Gui", "Widgets", "Network" ],
             "hints": [ "${QT_ROOT}" ]
         }
     },
-    "libraries": [],
+    "libraries": [
+        {
+            "name": "SichttestSteuerung",
+            "description": "DLL zur Steuerung der geprüften Anwendung: Kanal zum Tester über eine benannte Pipe, ohne Qt",
+            "skip": false,
+            "type": "SHARED",
+            "path": "projects/libs/SichttestSteuerung/src",
+            "dependencies": [],
+            "externals": [],
+            "platform": "windows"
+        }
+    ],
     "executables": [
+        {
+            "name": "Gegenprobe",
+            "description": "Anwendung ohne Qt für den Selbsttest: lädt die DLL zur Laufzeit und verbindet sich mit dem Tester",
+            "skip": false,
+            "type": "CONSOLE",
+            "path": "projects/exec/Gegenprobe/src",
+            "dependencies": [],
+            "externals": [],
+            "platforms": [ "windows" ]
+        },
         {
             "name": "Sichttest",
             "description": "Fenster zum Abhaken einer Sichttest-Liste: liest Markdown-Checklisten und *.testprotokoll.json, schreibt Testlog, Report und Screenshots neben die Liste",

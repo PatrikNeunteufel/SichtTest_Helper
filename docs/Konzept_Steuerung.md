@@ -204,9 +204,16 @@ Ein Tester, der wie heute von Hand gestartet wird, lauscht ebenfalls; eine Liste
 verhält sich genau wie heute.
 
 **Kanal:** unter Windows eine benannte Pipe `\\.\pipe\sichttest-<Benutzer>`, nur für den
-angemeldeten Benutzer zugänglich, nur eine erste Instanz (kein Unterschieben). Die DLL benutzt
-dafür die Windows-API direkt; der Tester benutzt `QLocalServer` (unter Windows dieselbe Pipe).
-Andere Plattformen: §11 E3.
+angemeldeten Benutzer zugänglich (`QLocalServer::UserAccessOption`). Dass nur ein Tester je
+Benutzer lauscht, sichert ein benannter Mutex `Global\sichttest-<Benutzer>`, den der Tester vor
+dem Lauschen nimmt. Ein zweiter Tester lauscht nicht, sagt das in der Statuszeile und arbeitet
+ohne Steuerung wie heute. Die DLL benutzt die Windows-API direkt; der Tester benutzt
+`QLocalServer` (unter Windows dieselbe Pipe). Andere Plattformen: §11 E3.
+
+> Gemessen am 2026-10-09 (SichtTest_Session2): DLL und `QLocalServer` reden über dieselbe Pipe.
+> `QLocalServer` allein lässt aber einen zweiten Tester desselben Benutzers auf demselben Namen
+> zu; deshalb der Mutex (Entscheid Patrik, 2026-10-09). Früherer Wortlaut: „nur eine erste
+> Instanz (kein Unterschieben)". Meldung an LV, CS und CC im nächsten Sync.
 
 **Rahmen:** 4 Byte Länge (little endian) + ein JSON-Objekt in UTF-8. Die DLL bringt dafür einen
 eigenen kleinen JSON-Leser mit; die Argumente einer Aktion reicht sie ungeprüft als Text weiter.

@@ -2,8 +2,8 @@
 # Source.cmake for executable src/
 # CMake Architecture V2 - Source Collection
 # ==============================================================================
-# Location: projects/exec/Sichttest/src/Source.cmake
-# Target:   Sichttest — Fenster zum Abhaken einer Sichttest-Liste (Session 93)
+# Location: projects/exec/Gegenprobe/src/Source.cmake
+# Target:   Gegenprobe — Anwendung ohne Qt, lädt die DLL zur Laufzeit (Selbsttest)
 # ==============================================================================
 
 dbg(${DBG_OFTEN}
@@ -16,18 +16,12 @@ dbg(${DBG_OFTEN}
 
 set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/main.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Kanal.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Protokoll.cpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Steuerung.cpp"
 )
 
 set(_local_headers
-    "${CMAKE_CURRENT_LIST_DIR}/Kanal.hpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Protokoll.hpp"
-    "${CMAKE_CURRENT_LIST_DIR}/Steuerung.hpp"
 )
 
-# Nur der Kopf der DLL (Fassungen von S und P): der Tester lädt die DLL nie.
+# Nur der Kopf: die Gegenprobe linkt nicht gegen die DLL, sie lädt sie zur Laufzeit.
 set(_local_includes
     "${CMAKE_CURRENT_LIST_DIR}"
     "${CMAKE_SOURCE_DIR}/projects/libs/SichttestSteuerung/include"
