@@ -15,12 +15,11 @@ Ohne die DLL arbeitet das Werkzeug wie bisher, und auch mit ihr bleibt jeder
 Handgriff als Text stehen — das Urteil fällt immer der Mensch.
 Beschreibung: `docs/Konzept_Steuerung.md`.
 
-**Herkunft:** Vorbild ist das Abnahme-Protokoll des UART-Studios
-(`UART/gui/Comm_Studio/TestProtokollWindow`), dort fest ins Studio eingebaut.
-Diese eigenständige Fassung entstand am 2026-10-03 in LumiViz
-(`projects/exec/Sichttest`, Session 93) und wurde von dort hierher kopiert.
-Seit dem 2026-10-08 wird das Werkzeug **hier** entwickelt und gebaut; die
-Kopie in LumiViz entfällt mit dessen Anbindung.
+**Gebaut wird mit [CMakeCraft](https://github.com/PatrikNeunteufel/CMakeCraft):**
+Das Build-System liegt nicht im Repo, es wird beim Configure in der Version aus
+`cmakecraft.pin` geholt. Was gebaut und geschnürt wird, steht allein in
+`Solution.json`. Anwendungen, die selbst mit CMakeCraft (ab v0.10.0) bauen,
+beziehen das fertige Paket von hier als External der Art `archive`.
 
 ## Aufbau
 
@@ -29,7 +28,7 @@ SichtTest_Helper/
 ├── CMakeLists.txt              Einstieg, holt CMakeCraft
 ├── CMakeCraftBootstrap.cmake   Bezug des Build-Systems
 ├── cmakecraft.pin              gepinnte CMakeCraft-Version
-├── CMakePresets.json           Presets (aus LumiViz übernommen, ungekürzt)
+├── CMakePresets.json           Presets
 ├── CMakeUserPresets.json       lokal: QT_ROOT (nicht versioniert)
 ├── Solution.json               was gebaut und geschnürt wird, Version
 ├── LICENSE, LICENSE-MIT, LICENSE-APACHE
@@ -119,7 +118,8 @@ sonst zählt das Werkzeug durch (`P7`). Haken in der Datei gelten als
 Ausgangsstand: `[x]` Pass, `[!]` Fail, `[-]` übersprungen. Eine Exe in
 Backticks im Vorspann wird erkannt. **Die Liste selbst wird nie verändert.**
 
-**`*.testprotokoll.json`** — das Format des UART-Testers
+**`*.testprotokoll.json`** — dieselbe Liste als JSON: `title`, `description` und
+`steps`, je Schritt `id`, `section`, `title`, `text`
 (Beispiel: `beispiele/Beispiel.testprotokoll.json`).
 
 ### Aktionen
@@ -179,10 +179,12 @@ Datei; unbekannte Schlüssel werden überlesen.
 | `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst | das Feld wird gelesen und als Text gezeigt |
 | `gewichtung` | Dateien des Nachtest-Indikators | wird gelesen, wirkt noch nicht |
 
-Die Felder des UART-Testers bleiben gültig und werden über `abbildung` zu Aktionen:
+Das JSON-Format kennt einige Felder, die erst über `abbildung` zu Aktionen werden:
 `setup.close_all_tabs`, `setup.open`, `test_db` und `test_db.ende` (Vorbereitung und
 Nachbereitung der Liste), `tab` und `restart` (am Schritt), dazu die Links `tab:<Titel>` und
-`sql:<Abfrage>` im Text. Eine Abfrage legt das Werkzeug selbst in die Zwischenablage.
+`sql:<Abfrage>` im Text. Eine Abfrage legt das Werkzeug selbst in die Zwischenablage. Welche
+Aktion ein Feld auslöst, bestimmt allein die Projektdatei; das Werkzeug kennt keine
+Aktionsnamen irgendeiner Anwendung.
 
 ## Was es schreibt
 
@@ -191,7 +193,7 @@ für den Ordner der Liste nennt:
 
 | Datei | Inhalt |
 |---|---|
-| `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`, bei ausgelösten Aktionen `actions`; dazu `build` und `summary` — Format des UART-Testers. Aus der Liste gehen `setup`, `test_db` und `areas` unverändert mit, die Nachbereitung steht unter `teardown_actions` |
+| `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`, bei ausgelösten Aktionen `actions`; dazu `build` und `summary`. Aus der Liste gehen `setup`, `test_db` und `areas` unverändert mit, die Nachbereitung steht unter `teardown_actions` |
 | `<Liste>_<Zeit>.report.md` | derselbe Stand zum Lesen: zuerst Fail und Pass mit Befund samt Bemerkung und Bildern, dann Übersprungen, Offen, Pass |
 | `<Liste>_<Zeit>_<Kennung>_<n>.png` | die Screenshots |
 
@@ -213,14 +215,14 @@ Liste fortgesetzt; **▶ Neuer Lauf** beginnt frisch.
 
 Fail und Pass mit Befund verlangen eine Bemerkung oder einen Screenshot.
 
-## Was der UART-Tester mehr kann (nicht übernommen)
+## Was das Werkzeug noch nicht kann
 
-Sprung zu einem Tab der Anwendung, Setup-Phase (Tabs schließen, Projekte
-öffnen), Test-Datenbank, Neustart der Anwendung mit Wiederaufnahme, Befund-
-Archiv je Schritt, risikobasierter Nachtest-Indikator, Statistik über alle
-Läufe. All das hängt dort an der Anwendung oder an einer Ergebnis-Datenbank.
-Was davon mit der Steuerung hierher umzieht, klärt das Konzept
-(`docs/Konzept_Steuerung.md`).
+Ein Befund-Archiv je Schritt, eine Ergebnis-Datenbank über alle Läufe, einen
+risikobasierten Nachtest-Indikator (die Dateien unter `gewichtung` werden
+gelesen, wirken aber noch nicht), »Unkritische überspringen« und eine Statistik
+über alle Läufe. Geplant ist das in `docs/Konzept_Steuerung.md` §14.
+
+Gebaut und geprüft ist nur Windows; die Steuerung gibt es nur dort.
 
 ## Lizenz
 

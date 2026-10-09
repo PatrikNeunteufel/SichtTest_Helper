@@ -1,10 +1,19 @@
 # Konzept: Sichttest steuert die geprüfte Anwendung
 
-> **Stand:** 2026-10-08 · **Status:** abgestimmt mit LV, CS und CC (SichtTest_Session1), E1–E7
-> entschieden (§11); wartet auf Leerlauf aller und Patriks Freigabe — **nichts ist gebaut** ·
-> **Gehört:** SichtTest_Helper (Sync-Prefix SH) ·
-> **Ausgangspunkt:** `Idee_Steuerung_der_Anwendung.md` (bleibt verbindlich, bis dieses Konzept
-> freigegeben ist) · **Abstimmung:** Sync `…\Visuals_Project\cmake\sync_sichttest`
+> **Stand:** 2026-10-09 · **Status:** abgestimmt mit LV, CS und CC, E1–E7 entschieden (§11),
+> Umsetzung von Patrik am 2026-10-08 gestaffelt freigegeben. **Gebaut und veröffentlicht sind die
+> Schritte 1 bis 3 aus §13** (bei SH und CC): DLL mit S 1.0, Protokoll P 1, die drei Köpfe,
+> Aktionen aus Listen, Projektdatei, Stufe 1 aus §14, CMakeCraft v0.10.0, Paket und Release
+> `v0.2.0`. Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
+> Gezählt wird hier nach §13; im Sync heißen dieselben Abschnitte nach der Freigabe „3 und 4"
+> (CMakeCraft und Paket), „5" (LumiViz) und „6" (Comm Studio) ·
+> **Gehört:** SichtTest_Helper (Sync-Prefix SH) · **Verbindliche Spezifikation** seit 2026-10-09;
+> die Idee (`Idee_Steuerung_der_Anwendung.md`) ist abgelöst ·
+> **Abstimmung:** Sync `…\Visuals_Project\cmake\sync_sichttest`
+>
+> Was beim Bauen festgelegt wurde, wo das Konzept nichts sagte, steht in der Sync-Nachricht
+> `SH-20261009-1305-…` und in `STATUS.md` des Syncs (SH-14, SH-15); es wird beim Eröffnen von
+> Schritt 5 mit CS hier eingearbeitet.
 
 ## 1. Gesetzt (Patrik, 2026-10-08 — nicht neu verhandelt)
 
@@ -523,11 +532,15 @@ sichttest-vX.Y.Z-win64/
 ```
 
 Gebaut wird das Paket nur als Release, ohne `.pdb`. Verbindlich stehen S und P im Kopf
-`sichttest_steuerung.h`; die Datei `VERSION` entsteht aus einer Schablone (`@VERSION@` aus
-`Solution.json`, S und P von Hand), und der Selbsttest vergleicht sie mit `sts_fassung()`.
+`sichttest_steuerung.h`; die Datei `VERSION` entsteht aus der Schablone `packaging/VERSION.in`
+(`@VERSION@` aus `Solution.json`, S und P von Hand), und der Selbsttest hält S und P der
+Schablone gegen den Kopf. Die Produktversion steht nicht im Kopf: DLL und Tester bekommen sie
+beim Bauen als Define `STS_PRODUKT` aus `Solution.json`, die Anwendung fragt sie mit
+`sts_fassung()` ab.
 
 **Pin:** jede Anwendung nennt in einer Datei `sichttest.pin` Version, Adresse und Prüfsumme
-(Vorbild `cmakecraft.pin`; Entwurf CC vom 08.10.2026):
+(Vorbild `cmakecraft.pin`). Die Prüfsumme ist die der **veröffentlichten** Datei — sie ändert
+sich mit jedem Schnüren, auch bei gleichem Inhalt:
 
 ```cmake
 set(SICHTTEST_VERSION "v0.2.0")
@@ -545,57 +558,67 @@ ersten Holen lokal), und `--testing` läuft ohne Steuerung. Das Comm Studio läd
 beim Configure aus dem Netz; für es ist das Holen neu, das Verteilen nicht (es legt Ordner schon
 heute nach dem Bau neben die Exe, `UART/gui/Comm_Studio/CMakeLists.txt:672–713`).
 
-Entschieden ist das fertige Paket je Tag (§11 E1). Was CMakeCraft dafür heute kann: §10.
+Entschieden ist das fertige Paket je Tag (§11 E1). Wie CMakeCraft es schnürt und bezieht: §10.
 
 ## 10. CMakeCraft
 
-Geprüft am Quelltext von CMakeCraft v0.9.2 (gelesen am 2026-10-08, nichts gebaut; Pfade relativ
-zu `CMakeCraft/`).
+Stand: **CMakeCraft v0.10.0** (Tag `25165cf`, 2026-10-09), in diesem Projekt und in LumiViz
+gepinnt. Bis v0.9.2 konnte CMakeCraft weder ein Paket schnüren noch ein fertiges beziehen; beides
+hat CC für diesen Zweck gebaut, statt dass ein Projekt es mit einem Behelf überbrückt. Referenz:
+`CMakeCraft/docs/de/guide/references/Packages.md`.
 
-**In diesem Projekt (die DLL bauen)**
+**In diesem Projekt (bauen und schnüren)**
 
-| Bedarf | Stand | Beleg |
+| Bedarf | Stand | Wie |
 |---|---|---|
-| Bibliothek als DLL (`"type": "SHARED"`) | geht | `cmake/project/LibraryCollect.cmake:97–104`, `LibraryCreate.cmake:157` |
-| Ohne Qt, obwohl das Projekt sonst Qt nutzt | geht — AUTOMOC und Qt-Link nur für Targets, die `Qt6` unter `externals` nennen | `cmake/externals/system/Handler.cmake:261–264` |
-| Exportierte C-Schnittstelle | geht mit eigenem Makro: CMake setzt bei einer DLL von sich aus `<Target>_EXPORTS`; ein Feld dafür gibt es nicht | kein `generate_export_header` in `cmake/` |
-| DLL neben die eigene Exe kopieren | geht nicht — **wird hier nicht gebraucht**: `Sichttest.exe` lädt die DLL nie (§4), die Gegenprobe lädt sie über ihren Pfad | `cmake/core/OutputDirs.cmake:94–116` |
-| Versionsangabe in der DLL-Datei (Windows-Ressource) | geht nicht — verzichtbar, `sts_fassung()` liefert dasselbe | — |
-| Feste C-Laufzeit nur für die DLL (`/MT`) | geht nicht: Bibliotheken kennen keine `compile_options`/`link_options` — verzichtbar (§12) | `LibraryCollect.cmake:57–218` |
-| **Paket je Tag schnüren** (Köpfe, DLL, Tester samt seinem Qt in einen Ordner/ein Archiv) | **geht nicht:** kein `install(`, kein Paketieren | kein Treffer in `cmake/`; nur als Idee in `docs/de/konzepte/Future_Enhancements.md:288–307` |
+| Bibliothek als DLL, ohne Qt | geht | `"type": "SHARED"`, keine Externals; AUTOMOC und Qt-Link bekommen nur Targets, die `Qt6` nennen |
+| Exportierte C-Schnittstelle | geht mit eigenem Makro | CMake setzt bei einer DLL `<Target>_EXPORTS`; `STS_API` im Kopf stützt sich darauf |
+| Große Fassung von S im Dateinamen | geht seit v0.10.0 | `"output_name": "SichttestSteuerung1"` an der Bibliothek; das Target heißt weiter `SichttestSteuerung` |
+| Produktversion im Quelltext | geht seit v0.10.0 | `"defines": ["STS_PRODUKT=\"{version}\""]` an DLL und Tester; `{version}` ist die Version aus `Solution.json` |
+| **Paket je Tag schnüren** | **geht seit v0.10.0** | Block `packages` in `Solution.json`; das Target `package_sichttest` (nicht in ALL, nur Release) legt `out/package/sichttest-v<version>-win64/`, die `.zip` und die `.zip.sha256` an |
+| DLL neben die eigene Exe kopieren | wird nicht gebraucht | `Sichttest.exe` lädt die DLL nie (§4); die Gegenproben laden sie über ihren Pfad |
+| Versionsangabe in der DLL-Datei (Windows-Ressource) | geht nicht — verzichtbar | `sts_fassung()` liefert dasselbe |
+| Feste C-Laufzeit nur für die DLL (`/MT`) | geht nicht — verzichtbar (§12) | Bibliotheken kennen keine `compile_options` |
 
-**In LumiViz (das Paket beziehen)**
+Der Block in `Solution.json`:
 
-| Bedarf | Stand | Beleg |
+```json
+"packages": [
+  { "name": "sichttest", "archive": "sichttest-v{version}-win64", "config": "Release",
+    "contents": [
+      { "to": "include", "headers_of": "SichttestSteuerung",
+        "files": ["sichttest_steuerung.h", "sichttest_steuerung.hpp", "sichttest_steuerung_qt.hpp"] },
+      { "to": "bin", "binary_of": "SichttestSteuerung" },
+      { "to": "sichttest", "output_dir_of": "Sichttest", "exclude": ["*.pdb", "*.ilk"] } ],
+    "version_file": "packaging/VERSION.in" } ]
+```
+
+`output_dir_of` nimmt den Ordner der Exe mit allen Unterordnern, also auch das, was windeployqt
+dort ablegt. Das Hochladen als Release bleibt Handarbeit von Patrik (`GitHub_Einrichtung.md`,
+Teil B).
+
+**In den Anwendungen (beziehen und verteilen)**
+
+| Bedarf | Stand | Wie |
 |---|---|---|
-| Fertiges Paket in gepinnter Version holen (Archiv mit Prüfsumme oder Git-Tag) | **geht nicht:** Externals kennen nur `system`, `git`, `path`; kein URL-Bezug, keine Art „fertig" | `cmake/externals/Orchestrator.cmake:83–106` |
-| DLL **und den Ordner des Testers** neben die Exe der Anwendung legen | **geht nicht** allgemein; nur für BASS, Lua und Qt fest eingebaut | `cmake/externals/includes/bass/Include.cmake:106–111` |
-| Schalter auf einen lokalen Ordner je External | **geht nicht** | nur `CMAKECRAFT_LOCAL_DIR` für das Build-System selbst |
-| Als Quelle beziehen und nur die DLL mitbauen | **geht nicht:** keine Auswahl eines Targets, und ein CMakeCraft-Projekt als Unterprojekt erzeugt keine Targets | `cmake/externals/core/Fetch.cmake:595–623`, `CMakeCraft.cmake:60–63` |
+| Fertiges Paket in gepinnter Version holen | **geht seit v0.10.0** | External mit `"archive": true` und `"pin": "sichttest.pin"`; Reihenfolge und Prüfsumme wie in §9 |
+| Include-Pfad und Define, ohne zu linken | geht | `include_dirs`, `define` — beides gilt **nur am Target, das das External nennt** (PRIVATE), nicht an denen, die davon abhängen |
+| DLL und den Ordner des Testers neben die Exe legen | geht | `runtime { files, dirs }`, je Konfiguration; abschaltbar je Target mit `external_options` |
+| Dasselbe ohne CMakeCraft (Comm Studio) | geht | die eigenständige Datei `CMakeCraftPackage.cmake` (`craft_package_fetch`, `craft_package_deploy`), als unveränderte Kopie im Repo |
 
-**Folge:** Bauen kann dieses Projekt die DLL mit CMakeCraft, wie es ist. Für das **Schnüren des
-Pakets** hier und für **Bezug und Verteilen** in LumiViz fehlt CMakeCraft etwas; das wird nicht
-mit einem Behelf überbrückt, sondern von CMakeCraft geliefert.
+Zwei Dinge, die eine Anwendung wissen muss:
 
-**Entwurf von CC (08.10.2026, Sync-Nachricht `CC-20261008-2208-…`), geplant als v0.10.0:**
+- **Die Kopie neben die Exe läuft nur, wenn die Exe gebaut wird.** Nach einem Wechsel der
+  Paketversion die Exe neu bauen, sonst bleiben DLL und Tester daneben die alten.
+- **Der Zwischenspeicher gilt über die Version, nicht über die Prüfsumme.** Wird unter derselben
+  Version neu geschnürt, den Ordner `.externals/sichttest/<version>/` löschen.
 
-- **Schnüren** (hier): neuer Schlüssel `packages` in `Solution.json`; das Target
-  `package_sichttest` legt `<build>/package/sichttest-v<version>-win64/` an, daneben `.zip` und
-  `.zip.sha256`. Das Hochladen als Release bleibt Handarbeit von Patrik; die Prüfsumme wandert in
-  die Pins. Dazu `output_name` an Bibliotheken: das Target heißt `SichttestSteuerung`, die Datei
-  `SichttestSteuerung1.dll`.
-- **Beziehen und verteilen** (LumiViz): neue External-Art `"archive": true` mit `pin`,
-  `include_dirs` (Include-Pfad ohne Link) und `runtime { files, dirs }` (neben jede Exe, die das
-  External nennt, je Konfiguration).
-- **Eine eigenständige Datei `CMakeCraftPackage.cmake`** trägt die ganze Bezugs- und
-  Verteillogik, ohne Abhängigkeit vom Kern von CMakeCraft. CMakeCraft ruft sie aus der neuen
-  External-Art; **das Comm Studio bindet dieselbe Datei direkt ein** (unveränderte Kopie im Repo,
-  wie der Bootstrap). Ein eigenes Skript von SH entfällt damit.
-- Hebt die Mindestversion von CMake auf 3.26 (Ordner nur bei Änderung kopieren).
+**Gemessen am 2026-10-09:** Schnüren hier (Ninja, clang, Release); Beziehen in LumiViz mit
+Release-clang, Debug-MSVC und Testing-MSVC, über den Fallback-Pfad und durch Herunterladen von
+der Release-Adresse auf GitHub. **Nicht gemessen:** ein Lauf mit getrenntem Netz; die DLL unter
+MSVC gebaut; der Bezug im Comm Studio.
 
-**Namen und Orte hier** (Angabe von SH an CC): Bibliothek `SichttestSteuerung` unter
-`projects/libs/SichttestSteuerung/`, die drei Köpfe in deren öffentlichem Ordner `include/`;
-Executable `Sichttest`.
+Mindestversion von CMake: 3.26.
 
 ## 11. Entscheide (Patrik)
 
