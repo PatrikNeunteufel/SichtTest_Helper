@@ -552,9 +552,16 @@ set(SICHTTEST_FALLBACK_PATHS "../SichtTest_Helper/out/package")
 Gesucht wird in dieser Reihenfolge: `SICHTTEST_LOCAL_DIR` (Entwicklung) → Zwischenspeicher
 `.externals/sichttest/<version>/` → Herunterladen mit Prüfsumme → Fallback-Pfade.
 
-**Ohne Netz baut die Anwendung weiter:** lässt sich das Paket nicht holen und liegt es nicht
-schon im Zwischenspeicher, gibt es eine Warnung, die Köpfe fehlen dann nicht (sie liegen nach dem
-ersten Holen lokal), und `--testing` läuft ohne Steuerung. Das Comm Studio lädt bisher nichts
+**Ohne Netz baut die Anwendung weiter.** Zwei Fälle:
+
+- Das Paket liegt schon im **Zwischenspeicher** (nach dem ersten Holen): kein Netz nötig, keine
+  Warnung; Köpfe, Define und Laufzeitdateien sind da.
+- Das Paket liegt **weder im Zwischenspeicher, noch lässt es sich holen:** es gibt eine Warnung
+  (`[CraftPackage]`, W304), die Köpfe fehlen, das Define `SICHTTEST_VORHANDEN` wird nicht
+  gesetzt, und es wird nichts kopiert. Die Anwendung übersetzt dann ohne Steuerung (§8), und
+  `--testing` läuft ohne sie.
+
+Das Comm Studio lädt bisher nichts
 beim Configure aus dem Netz; für es ist das Holen neu, das Verteilen nicht (es legt Ordner schon
 heute nach dem Bau neben die Exe, `UART/gui/Comm_Studio/CMakeLists.txt:672–713`).
 
@@ -574,7 +581,7 @@ hat CC für diesen Zweck gebaut, statt dass ein Projekt es mit einem Behelf übe
 | Bibliothek als DLL, ohne Qt | geht | `"type": "SHARED"`, keine Externals; AUTOMOC und Qt-Link bekommen nur Targets, die `Qt6` nennen |
 | Exportierte C-Schnittstelle | geht mit eigenem Makro | CMake setzt bei einer DLL `<Target>_EXPORTS`; `STS_API` im Kopf stützt sich darauf |
 | Große Fassung von S im Dateinamen | geht seit v0.10.0 | `"output_name": "SichttestSteuerung1"` an der Bibliothek; das Target heißt weiter `SichttestSteuerung` |
-| Produktversion im Quelltext | geht seit v0.10.0 | `"defines": ["STS_PRODUKT=\"{version}\""]` an DLL und Tester; `{version}` ist die Version aus `Solution.json` |
+| Produktversion im Quelltext | geht seit v0.10.0 | `"defines": ["STS_PRODUKT=\"{version}\""]` an DLL und Tester. `{version}` ist dort die Version des **Targets** — sein eigenes Feld `version`, sonst die der Solution. Hier trägt kein Target ein eigenes, also kommt die der Solution an; das muss so bleiben, denn `{version}` im Paketnamen und `@VERSION@` in der Schablone sind immer die der Solution |
 | **Paket je Tag schnüren** | **geht seit v0.10.0** | Block `packages` in `Solution.json`; das Target `package_sichttest` (nicht in ALL, nur Release) legt `out/package/sichttest-v<version>-win64/`, die `.zip` und die `.zip.sha256` an |
 | DLL neben die eigene Exe kopieren | wird nicht gebraucht | `Sichttest.exe` lädt die DLL nie (§4); die Gegenproben laden sie über ihren Pfad |
 | Versionsangabe in der DLL-Datei (Windows-Ressource) | geht nicht — verzichtbar | `sts_fassung()` liefert dasselbe |
@@ -613,7 +620,8 @@ Zwei Dinge, die eine Anwendung wissen muss:
 - **Der Zwischenspeicher gilt über die Version, nicht über die Prüfsumme.** Wird unter derselben
   Version neu geschnürt, den Ordner `.externals/sichttest/<version>/` löschen.
 
-**Gemessen am 2026-10-09:** Schnüren hier (Ninja, clang, Release); Beziehen in LumiViz mit
+**Gemessen am 2026-10-09:** Schnüren hier (Ninja, clang, Release) und bei CC in einem
+Probeprojekt auch mit Ninja Multi-Config; Schnüren mit MSVC hat niemand gesehen. Beziehen in LumiViz mit
 Release-clang, Debug-MSVC und Testing-MSVC, über den Fallback-Pfad und durch Herunterladen von
 der Release-Adresse auf GitHub. **Nicht gemessen:** ein Lauf mit getrenntem Netz; die DLL unter
 MSVC gebaut; der Bezug im Comm Studio.
