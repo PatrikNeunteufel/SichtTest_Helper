@@ -49,16 +49,27 @@ cmake --preset windows-ninja-release-clang
 ```
 
 ```bash
-cmake --build --preset build-ninja-release-clang --target Sichttest
+cmake --build --preset build-ninja-release-clang
 ```
+
+Das baut alle Targets: das Werkzeug, die DLL `SichttestSteuerung1.dll` und die zwei Gegenproben,
+die der Selbsttest braucht.
 
 Exe: `out/build/windows-ninja-release-clang/exec/Sichttest/bin/Release/Sichttest.exe`
 
-Voraussetzung: `QT_ROOT` zeigt auf ein Qt-6-Kit (lokal in
+Voraussetzung: CMake ab 3.26; `QT_ROOT` zeigt auf ein Qt-6-Kit (lokal in
 `CMakeUserPresets.json`, etwa `C:/Qt/6.10.1/msvc2022_64`). CMakeCraft wird beim
 Configure in der Version aus `cmakecraft.pin` nach `.externals/` geholt.
 
 Prüfen: `Sichttest.exe --selbsttest <leerer Ordner>` endet mit Exit-Code 0.
+
+Das Paket für die Anwendungen (Köpfe, DLL, Werkzeug mit seinem Qt) schnürt
+
+```bash
+cmake --build --preset build-ninja-release-clang --target package_sichttest
+```
+
+nach `out/package/`. Ablauf einer Veröffentlichung: `docs/GitHub_Einrichtung.md`, Teil B.
 
 ## Aufruf
 

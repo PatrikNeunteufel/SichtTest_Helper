@@ -32,7 +32,9 @@
             "description": "DLL zur Steuerung der geprüften Anwendung: Kanal zum Tester über eine benannte Pipe, ohne Qt",
             "skip": false,
             "type": "SHARED",
+            "output_name": "SichttestSteuerung1",
             "path": "projects/libs/SichttestSteuerung/src",
+            "defines": [ "STS_PRODUKT=\"{version}\"" ],
             "dependencies": [],
             "externals": [],
             "platform": "windows"
@@ -45,6 +47,7 @@
             "skip": false,
             "type": "CONSOLE",
             "path": "projects/exec/Gegenprobe/src",
+            "defines": [ "STS_PRODUKT=\"{version}\"" ],
             "dependencies": [],
             "externals": [],
             "platforms": [ "windows" ]
@@ -65,9 +68,24 @@
             "skip": false,
             "type": "GUI",
             "path": "projects/exec/Sichttest/src",
+            "defines": [ "STS_PRODUKT=\"{version}\"" ],
             "dependencies": [],
             "externals": [ "Qt6" ],
             "platforms": [ "windows", "linux", "macos" ]
+        }
+    ],
+    "packages": [
+        {
+            "name": "sichttest",
+            "archive": "sichttest-v{version}-win64",
+            "config": "Release",
+            "contents": [
+                { "to": "include", "headers_of": "SichttestSteuerung",
+                  "files": [ "sichttest_steuerung.h", "sichttest_steuerung.hpp", "sichttest_steuerung_qt.hpp" ] },
+                { "to": "bin", "binary_of": "SichttestSteuerung" },
+                { "to": "sichttest", "output_dir_of": "Sichttest", "exclude": [ "*.pdb", "*.ilk" ] }
+            ],
+            "version_file": "packaging/VERSION.in"
         }
     ],
     "apps": [],

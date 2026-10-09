@@ -292,7 +292,8 @@ namespace sichttest
         exe += QLatin1String("/Gegenprobe.exe");
         dll = hier;
         dll.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/libs/SichttestSteuerung/"));
-        dll += QLatin1String("/SichttestSteuerung.dll");
+        // Die große Fassung von S steht im Dateinamen (Konzept §5).
+        dll += QStringLiteral("/SichttestSteuerung%1.dll").arg(STS_S_MAJOR);
         return QFileInfo::exists(exe) && QFileInfo::exists(dll);
     }
 
@@ -328,19 +329,15 @@ namespace sichttest
             return fertig();
         };
 
-        // Die Teile liegen im Build-Baum nebeneinander: exec/<Target>/bin/<Konfig>/, libs/<Target>/bin/<Konfig>/.
         const QString hier = QCoreApplication::applicationDirPath();
-        QString gegenprobe = hier;
-        gegenprobe.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/exec/Gegenprobe/"));
-        gegenprobe += QLatin1String("/Gegenprobe.exe");
-        QString dll = hier;
-        dll.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/libs/SichttestSteuerung/"));
-        dll += QLatin1String("/SichttestSteuerung.dll");
+        QString gegenprobe, dll;
+        gegenprobePfade(gegenprobe, dll);
         pruefe(QFileInfo::exists(gegenprobe), QStringLiteral("Gegenprobe ist gebaut: %1").arg(gegenprobe));
         pruefe(QFileInfo::exists(dll), QStringLiteral("DLL ist gebaut: %1").arg(dll));
         if (!QFileInfo::exists(gegenprobe) || !QFileInfo::exists(dll)) return fehler;
 
-        // Die Produktversion steht von Hand im Kopf; im Build-Baum lässt sie sich gegen Solution.json halten.
+        // Im Build-Baum: die Produktversion kommt als Define aus Solution.json, und die
+        // Schablone der Datei VERSION im Paket nennt S und P wie der Kopf (Konzept §9).
         {
             QDir d(hier);
             for (int n = 0; n < 10 && !d.exists(QStringLiteral("Solution.json")); ++n)
@@ -353,6 +350,18 @@ namespace sichttest
                 pruefe(version == QLatin1String(STS_PRODUKT),
                        QStringLiteral("STS_PRODUKT (%1) ist die Version aus Solution.json (%2)")
                            .arg(QLatin1String(STS_PRODUKT), version));
+            }
+            QFile v(d.filePath(QStringLiteral("packaging/VERSION.in")));
+            if (v.open(QIODevice::ReadOnly))
+            {
+                const QStringList zeilen = QString::fromUtf8(v.readAll()).split(QLatin1Char('\n'));
+                QStringList sauber;
+                for (const QString& z : zeilen) sauber.append(z.trimmed());
+                pruefe(sauber.contains(QStringLiteral("s=%1.%2").arg(STS_S_MAJOR).arg(STS_S_MINOR))
+                       && sauber.contains(QStringLiteral("p=%1").arg(STS_P_MAJOR))
+                       && sauber.contains(QStringLiteral("produkt=@VERSION@")),
+                       QStringLiteral("packaging/VERSION.in nennt S %1.%2 und P %3 wie der Kopf")
+                           .arg(STS_S_MAJOR).arg(STS_S_MINOR).arg(STS_P_MAJOR));
             }
         }
 

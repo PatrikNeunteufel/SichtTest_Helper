@@ -125,10 +125,11 @@ Voraussetzung: CMakeCraft v0.10.0 (`packages` in `Solution.json`, Konzept §10).
    ```
 
    ```bash
-   cmake --build --preset build-ninja-release-clang --target Sichttest
+   cmake --build --preset build-ninja-release-clang
    ```
 
-   Danach `Sichttest.exe --selbsttest <leerer Ordner>`, Exit-Code 0.
+   Danach `Sichttest.exe --selbsttest <leerer Ordner>`, Exit-Code 0. Der Selbsttest braucht alle
+   Targets, deshalb ohne `--target`.
 3. **Paket schnüren:**
 
    ```bash
@@ -136,7 +137,9 @@ Voraussetzung: CMakeCraft v0.10.0 (`packages` in `Solution.json`, Konzept §10).
    ```
 
    Ergebnis in `out/package/`: `sichttest-vX.Y.Z-win64/`, `sichttest-vX.Y.Z-win64.zip` und
-   `sichttest-vX.Y.Z-win64.zip.sha256`.
+   `sichttest-vX.Y.Z-win64.zip.sha256`. **Danach nicht noch einmal schnüren:** die Prüfsumme
+   ändert sich mit jedem Lauf, auch bei gleichem Inhalt. Hochgeladen wird genau diese Datei, und
+   ihre Prüfsumme gehört in die Pins.
 4. **Committen, taggen, hochladen:** Commit, `git tag -a vX.Y.Z -m "…"`, `git push origin master`,
    `git push origin vX.Y.Z`.
 5. **Release anlegen:** auf GitHub **Releases → Draft a new release**, den Tag `vX.Y.Z` wählen,
