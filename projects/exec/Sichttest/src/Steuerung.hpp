@@ -16,6 +16,7 @@
 
 #include <functional>
 
+class QProcess;
 class QTextStream;
 class QTimer;
 
@@ -103,4 +104,8 @@ namespace sichttest
     // Teil von --selbsttest: startet die Gegenprobe (ohne Qt), die die DLL lädt
     // und sich als Anwendung meldet. Gibt die Zahl der gescheiterten Prüfungen zurück.
     int selbsttestSteuerung(QTextStream& aus);
+
+    // Für den Selbsttest: die Gegenprobe aus dem Build-Baum starten, verbunden mit
+    // dem genannten Kanal. false = sie ist nicht gebaut.
+    bool starteGegenprobe(QProcess& p, const QString& szenario, const QString& kanal);
 }

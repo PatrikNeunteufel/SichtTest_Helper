@@ -5,6 +5,12 @@
 // `*.testprotokoll.json` (Format des UART-Testers: title, description, steps
 // mit id / section / title / text).
 //
+// Ein Punkt kann Aktionen tragen, die das Werkzeug in der geprüften Anwendung
+// auslöst (docs/Konzept_Steuerung.md §6): in Markdown als Code-Stück
+// `aktion: name schlüssel=wert`, in JSON als "aktionen". Ein Punkt, dessen
+// Titel mit »Vorbereiten« beginnt (JSON: "kind": "prep"), ist eine
+// Vorbereitung: er bekommt kein Urteil und zählt nicht mit.
+//
 // Das Testlog (`*.testlog.json`) hat das Format des UART-Testers und wird nach
 // jeder Bewertung geschrieben; daneben liegt ein Report in Markdown, den ein
 // Mensch und Claude lesen.
@@ -23,7 +29,12 @@ namespace sichttest
         QString    titel;
         QString    beschreibung;
         QString    exe;        // aus der Beschreibung gelesen, kann leer sein
-        QJsonArray schritte;   // id, section, title, text, result, remark, screenshots
+        QJsonArray schritte;   // id, section, title, text, result, remark, screenshots;
+                               // dazu kind ("prep" = Vorbereitung, ohne Urteil), aktionen[]
+                               // (aus der Liste) und actions[] (was im Lauf ausgelöst wurde)
+        QString    anwendung;  // Name, unter dem sich die Anwendung meldet; leer = die einzige verbundene
+        QJsonArray nachbereitung; // Aktionen für das Ende des Laufs (nur JSON)
+        QStringList hinweise;  // beim Laden bemerkt: Verweis auf unbekannte Kennung, Verweis im Kreis
     };
 
     struct Zaehler
@@ -39,6 +50,23 @@ namespace sichttest
     // [x] = pass, [!] = fail, [-] = skip.
     Protokoll ausMarkdown(const QString& text, const QString& pfad);
     Protokoll ausJson(const QJsonObject& wurzel, const QString& pfad);
+
+    // --- Aktionen (Konzept §6) ----------------------------------------------
+    // Eine Aktion ist ein Objekt { "aktion": Name, "mit": { Schlüssel: Wert }, "text"?, "frist"? }.
+    // Ein Name mit @ davor verweist auf die Aktionen des Punkts mit dieser Kennung.
+
+    // Inhalt eines Code-Stücks `aktion: <name> [wert] [schlüssel=wert …]` lesen (ohne
+    // das führende "aktion:"). Werte mit Leerzeichen in "…"; Werte ohne Schlüssel
+    // kommen als Argument "wert" an.
+    QJsonObject leseAktion(const QString& stueck);
+
+    bool istVorbereitung(const QJsonObject& schritt);
+    // Aktionen eines Punkts, Verweise aufgelöst. Was sich nicht auflösen lässt, steht
+    // mit "unbekannt": true in der Reihe und wird wie eine unbekannte Aktion behandelt.
+    QJsonArray aktionenVon(const Protokoll& protokoll, int idx, QStringList* hinweise = nullptr);
+    // Vorbereitung, die zu einem Punkt gehört: die seines Abschnitts, sonst die der
+    // ganzen Liste (vor dem ersten Abschnitt). -1 = keine.
+    int vorbereitungVon(const Protokoll& protokoll, int idx);
 
     // Datei nach Endung laden; leere Schrittliste = nichts Brauchbares gefunden.
     Protokoll lade(const QString& pfad, QString* fehler = nullptr);

@@ -90,6 +90,144 @@ namespace sichttest
                 .arg(s.value(QStringLiteral("id")).toString(),
                      s.value(QStringLiteral("title")).toString());
         }
+
+        // Die Code-Stücke `aktion: …` aus dem Text eines Punkts nehmen (§6.1): im
+        // Fenster stehen sie nicht, in jedem anderen Betrachter als unauffälliger Code.
+        QString nimmAktionenHeraus(QString text, QJsonArray& aktionen)
+        {
+            static const QRegularExpression stueck(QStringLiteral(R"(`\s*aktion:\s*([^`]*)`)"));
+            static const QRegularExpression luecke(QStringLiteral(R"([ \t]{2,})"));
+            auto it = stueck.globalMatch(text);
+            while (it.hasNext())
+            {
+                const QJsonObject a = leseAktion(it.next().captured(1));
+                if (!a.isEmpty()) aktionen.append(a);
+            }
+            text.remove(stueck);
+            text.replace(luecke, QStringLiteral(" "));
+            return text.trimmed();
+        }
+
+        void macheZurVorbereitung(QJsonObject& s)
+        {
+            s.insert(QStringLiteral("kind"), QStringLiteral("prep"));
+            s.insert(QStringLiteral("result"), QStringLiteral("prep"));
+        }
+
+        int findeSchritt(const Protokoll& p, const QString& id)
+        {
+            for (int n = 0; n < p.schritte.size(); ++n)
+                if (p.schritte.at(n).toObject().value(QStringLiteral("id")).toString() == id) return n;
+            return -1;
+        }
+
+        void sammleAktionen(const Protokoll& p, int idx, QStringList& weg, QJsonArray& aus, QStringList* hinweise)
+        {
+            const QJsonObject s = p.schritte.at(idx).toObject();
+            const QString id = s.value(QStringLiteral("id")).toString();
+            weg.append(id);
+            const QJsonArray aktionen = s.value(QStringLiteral("aktionen")).toArray();
+            for (const QJsonValue& v : aktionen)
+            {
+                QJsonObject a = v.toObject();
+                const QString name = a.value(QStringLiteral("aktion")).toString();
+                if (!name.startsWith(QLatin1Char('@')))
+                {
+                    aus.append(a);
+                    continue;
+                }
+                const QString zielId = name.mid(1);
+                const int ziel = findeSchritt(p, zielId);
+                if (ziel >= 0 && !weg.contains(zielId))
+                {
+                    sammleAktionen(p, ziel, weg, aus, hinweise);
+                    continue;
+                }
+                if (hinweise)
+                    hinweise->append(ziel < 0
+                        ? QStringLiteral("%1: Verweis %2 nennt eine Kennung, die es in der Liste nicht gibt").arg(id, name)
+                        : QStringLiteral("%1: Verweis %2 läuft im Kreis").arg(id, name));
+                a.insert(QStringLiteral("unbekannt"), true);
+                aus.append(a);
+            }
+            weg.removeLast();
+        }
+
+        void pruefeVerweise(Protokoll& p)
+        {
+            for (int n = 0; n < p.schritte.size(); ++n) aktionenVon(p, n, &p.hinweise);
+            p.hinweise.removeDuplicates();
+        }
+    }
+
+    QJsonObject leseAktion(const QString& stueck)
+    {
+        // In Teile schneiden: Leerraum trennt, außer in "…"; das erste = außerhalb
+        // von Anführungszeichen trennt Schlüssel und Wert.
+        struct Teil { QString text; int gleich = -1; };
+        QList<Teil> teile;
+        Teil t;
+        bool zitat = false;
+        bool begonnen = false;
+        auto schliesse = [&]() {
+            if (begonnen) teile.append(t);
+            t = {};
+            begonnen = false;
+        };
+        for (const QChar c : stueck)
+        {
+            if (c == QLatin1Char('"')) { zitat = !zitat; begonnen = true; continue; }
+            if (c.isSpace() && !zitat) { schliesse(); continue; }
+            if (c == QLatin1Char('=') && !zitat && t.gleich < 0) t.gleich = int(t.text.size());
+            t.text += c;
+            begonnen = true;
+        }
+        schliesse();
+        if (teile.isEmpty() || teile.first().text.isEmpty()) return {};
+
+        QJsonObject mit;
+        QStringList lose;
+        for (int n = 1; n < teile.size(); ++n)
+        {
+            const Teil& e = teile.at(n);
+            if (e.gleich > 0) mit.insert(e.text.left(e.gleich), e.text.mid(e.gleich + 1));
+            else lose.append(e.text);
+        }
+        if (!lose.isEmpty()) mit.insert(QStringLiteral("wert"), lose.join(QLatin1Char(' ')));
+        QJsonObject a;
+        a.insert(QStringLiteral("aktion"), teile.first().text);
+        a.insert(QStringLiteral("mit"), mit);
+        return a;
+    }
+
+    bool istVorbereitung(const QJsonObject& schritt)
+    {
+        return schritt.value(QStringLiteral("kind")).toString() == QLatin1String("prep");
+    }
+
+    QJsonArray aktionenVon(const Protokoll& protokoll, int idx, QStringList* hinweise)
+    {
+        QJsonArray aus;
+        if (idx < 0 || idx >= protokoll.schritte.size()) return aus;
+        QStringList weg;
+        sammleAktionen(protokoll, idx, weg, aus, hinweise);
+        return aus;
+    }
+
+    int vorbereitungVon(const Protokoll& protokoll, int idx)
+    {
+        if (idx < 0 || idx >= protokoll.schritte.size()) return -1;
+        const QString sektion = protokoll.schritte.at(idx).toObject().value(QStringLiteral("section")).toString();
+        int fuerAlle = -1;
+        for (int n = 0; n < protokoll.schritte.size(); ++n)
+        {
+            const QJsonObject s = protokoll.schritte.at(n).toObject();
+            if (!istVorbereitung(s)) continue;
+            const QString sek = s.value(QStringLiteral("section")).toString();
+            if (sek == sektion && !sektion.isEmpty()) return n;
+            if (sek.isEmpty() && fuerAlle < 0) fuerAlle = n;
+        }
+        return fuerAlle;
     }
 
     Protokoll ausMarkdown(const QString& text, const QString& pfad)
@@ -113,6 +251,8 @@ namespace sichttest
             offen = false;
             QString id, titel, rest;
             zerlegeKopf(kopf.trimmed(), id, titel, rest);
+            QJsonArray aktionen;
+            rest = nimmAktionenHeraus(rest, aktionen);
             QJsonObject s;
             s.insert(QStringLiteral("id"), id);
             s.insert(QStringLiteral("section"), sektion);
@@ -121,6 +261,8 @@ namespace sichttest
             s.insert(QStringLiteral("result"), ergebnisAusHaken(haken));
             s.insert(QStringLiteral("remark"), QString());
             s.insert(QStringLiteral("screenshots"), QJsonArray());
+            if (!aktionen.isEmpty()) s.insert(QStringLiteral("aktionen"), aktionen);
+            if (titel.startsWith(QLatin1String("Vorbereiten"), Qt::CaseInsensitive)) macheZurVorbereitung(s);
             p.schritte.append(s);
         };
 
@@ -175,7 +317,10 @@ namespace sichttest
 
         p.beschreibung = vorspann.join(QLatin1Char('\n')).trimmed();
         p.exe = findeExe(p.beschreibung);
+        static const QRegularExpression anwendung(QStringLiteral(R"(\*\*Anwendung:\*\*\s*([^\s·`*]+))"));
+        p.anwendung = anwendung.match(p.beschreibung).captured(1);
         macheIdsEindeutig(p.schritte);
+        pruefeVerweise(p);
         return p;
     }
 
@@ -186,10 +331,36 @@ namespace sichttest
         p.titel = wurzel.value(QStringLiteral("title")).toString(QFileInfo(pfad).completeBaseName());
         p.beschreibung = wurzel.value(QStringLiteral("description")).toString();
         p.exe = wurzel.value(QStringLiteral("exe")).toString(findeExe(p.beschreibung));
+        p.anwendung = wurzel.value(QStringLiteral("anwendung")).toString();
+        p.nachbereitung = wurzel.value(QStringLiteral("nachbereitung")).toArray();
+
+        // "vorbereitung" an der Wurzel gilt für die ganze Liste: ein Punkt vor dem ersten Abschnitt.
+        const QJsonArray vorbereitung = wurzel.value(QStringLiteral("vorbereitung")).toArray();
+        if (!vorbereitung.isEmpty())
+        {
+            QStringList texte;
+            for (const QJsonValue& v : vorbereitung)
+            {
+                const QString t = v.toObject().value(QStringLiteral("text")).toString();
+                if (!t.isEmpty()) texte.append(QStringLiteral("- ") + t);
+            }
+            QJsonObject s;
+            s.insert(QStringLiteral("id"), QStringLiteral("V0"));
+            s.insert(QStringLiteral("section"), QString());
+            s.insert(QStringLiteral("title"), QStringLiteral("Vorbereiten"));
+            s.insert(QStringLiteral("text"), texte.join(QLatin1Char('\n')));
+            s.insert(QStringLiteral("remark"), QString());
+            s.insert(QStringLiteral("screenshots"), QJsonArray());
+            s.insert(QStringLiteral("aktionen"), vorbereitung);
+            macheZurVorbereitung(s);
+            p.schritte.append(s);
+        }
+
         const QJsonArray schritte = wurzel.value(QStringLiteral("steps")).toArray();
         for (const QJsonValue& v : schritte)
         {
             QJsonObject s = v.toObject();
+            if (istVorbereitung(s)) macheZurVorbereitung(s);
             if (!s.contains(QStringLiteral("result")))
                 s.insert(QStringLiteral("result"), QStringLiteral("open"));
             if (!s.contains(QStringLiteral("remark")))
@@ -199,6 +370,7 @@ namespace sichttest
             p.schritte.append(s);
         }
         macheIdsEindeutig(p.schritte);
+        pruefeVerweise(p);
         return p;
     }
 
@@ -246,7 +418,7 @@ namespace sichttest
             QJsonObject s = protokoll.schritte.at(n).toObject();
             const auto it = alt.constFind(s.value(QStringLiteral("id")).toString());
             if (it == alt.constEnd()) continue;
-            for (const char* feld : { "result", "remark", "screenshots", "rated" })
+            for (const char* feld : { "result", "remark", "screenshots", "rated", "actions" })
                 if (it->contains(QLatin1String(feld)))
                     s.insert(QLatin1String(feld), it->value(QLatin1String(feld)));
             protokoll.schritte.replace(n, s);
@@ -258,6 +430,7 @@ namespace sichttest
         Zaehler z;
         for (const QJsonValue& v : schritte)
         {
+            if (istVorbereitung(v.toObject())) continue;   // ohne Urteil, zählt nicht
             const QString r = v.toObject().value(QStringLiteral("result")).toString();
             if (r == QLatin1String("pass")) ++z.pass;
             else if (r == QLatin1String("pass_remark")) ++z.passBefund;
@@ -274,6 +447,7 @@ namespace sichttest
         if (ergebnis == QLatin1String("pass_remark")) return QStringLiteral("✓⚠");
         if (ergebnis == QLatin1String("fail"))        return QStringLiteral("✗");
         if (ergebnis == QLatin1String("skip"))        return QStringLiteral("↷");
+        if (ergebnis == QLatin1String("prep"))        return QStringLiteral("▷");
         return QStringLiteral("○");
     }
 

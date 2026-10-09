@@ -97,6 +97,35 @@ Backticks im Vorspann wird erkannt. **Die Liste selbst wird nie verändert.**
 **`*.testprotokoll.json`** — das Format des UART-Testers
 (Beispiel: `beispiele/Beispiel.testprotokoll.json`).
 
+### Aktionen
+
+Ein Punkt kann Aktionen tragen, die das Werkzeug in der geprüften Anwendung auslöst
+(Beispiel: `beispiele/Beispiel_Aktionen.md`, Beschreibung: `docs/Konzept_Steuerung.md` §6).
+Die Anwendung muss dafür mit `--testing` laufen und ihre Aktionen angemeldet haben; ohne
+Verbindung verhält sich die Liste wie eine ohne Aktionen.
+
+```markdown
+**Anwendung:** MeineAnwendung
+
+- [ ] **A0 Vorbereiten:** Vorlage laden, dann Bearbeiten einschalten.
+      `aktion: vorlage_laden datei="vorlagen\ansicht A.vorlage"` `aktion: bearbeiten an`
+- [ ] **A1 Die Marke steht an ihrer Zeit:** Marke auf 0:20 setzen. `aktion: marke zeit=0:20`
+- [ ] **A2 Wie A0, aber ohne Bearbeiten:** … `aktion: @A0` `aktion: bearbeiten aus`
+```
+
+- Form: `` `aktion: <name> [wert] [schlüssel=wert …]` ``, Werte mit Leerzeichen in `"…"`. Ein Wert
+  ohne Schlüssel kommt als Argument `wert` an. Im Fenster stehen die Stücke nicht im Text.
+- Ein Punkt, dessen Titel mit **Vorbereiten** beginnt, ist eine Vorbereitung: kein Urteil,
+  dafür **▶ Ausführen** und **Weiter →**; er zählt nicht mit. Vor dem ersten Abschnitt gilt er
+  für die ganze Liste.
+- Die Aktionen eines gewöhnlichen Punkts laufen nur auf **▶ Herstellen**. **↺ Vorbereitung**
+  wiederholt die Vorbereitung des Abschnitts.
+- `` `aktion: @A0` `` führt die Aktionen des Punkts `A0` an dieser Stelle aus.
+- Scheitert eine Aktion oder kennt die Anwendung sie nicht, steht die Meldung rot am Punkt und
+  darunter der Handgriff als Text. Der Lauf hält nie an, das Urteil bleibt beim Menschen.
+- In JSON: `"anwendung"`, `"vorbereitung": [ … ]` an der Wurzel, je Schritt `"aktionen": [ { "aktion":
+  …, "mit": { … }, "text": …, "frist": Sekunden } ]`, `"kind": "prep"` für eine Vorbereitung.
+
 ## Was es schreibt
 
 Neben die Liste, in den Unterordner `sichttest-logs/`:

@@ -272,6 +272,25 @@ namespace sichttest
     // Selbsttest
     // ==========================================================================
 
+    bool starteGegenprobe(QProcess& p, const QString& szenario, const QString& kanal)
+    {
+        const QString hier = QCoreApplication::applicationDirPath();
+        QString gegenprobe = hier;
+        gegenprobe.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/exec/Gegenprobe/"));
+        gegenprobe += QLatin1String("/Gegenprobe.exe");
+        QString dll = hier;
+        dll.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/libs/SichttestSteuerung/"));
+        dll += QLatin1String("/SichttestSteuerung.dll");
+        if (!QFileInfo::exists(gegenprobe) || !QFileInfo::exists(dll)) return false;
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert(QStringLiteral("SICHTTEST_KANAL"), kanal);
+        env.insert(QStringLiteral("SICHTTEST_EXE"), hier + QStringLiteral("/gibt-es-nicht.exe"));
+        p.setProcessEnvironment(env);
+        p.setProcessChannelMode(QProcess::MergedChannels);
+        p.start(gegenprobe, { dll, szenario });
+        return true;
+    }
+
     int selbsttestSteuerung(QTextStream& aus)
     {
         int fehler = 0;

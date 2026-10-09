@@ -26,6 +26,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QDragEnterEvent>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -47,6 +48,8 @@
 #include <QSplitter>
 #include <QTextBrowser>
 #include <QTextStream>
+#include <QThread>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -224,8 +227,10 @@ namespace
             pruefe(original.open(QIODevice::ReadOnly) && original.readAll().contains("- [ ] **A1 Eins:**"),
                    QStringLiteral("die Liste selbst ist unverändert"));
 
+            selbsttestListen(d, pruefe);
 #ifdef Q_OS_WIN
             fehler += selbsttestSteuerung(aus);
+            selbsttestAktionen(d, pruefe, klicke);
 #endif
 
             aus << (fehler == 0 ? "Selbsttest bestanden" : "Selbsttest GESCHEITERT") << "\n";
@@ -352,6 +357,22 @@ namespace
             bildZeile->addWidget(m_bilder, 1);
             col->addLayout(bildZeile);
 
+            // Aktionen des Punkts (Konzept §6): laufen nie von selbst, nur auf den Knopf.
+            auto* aktionsZeile = new QHBoxLayout();
+            m_herstellen = new QPushButton(QStringLiteral("▶ Herstellen"), rechts);
+            m_vorbereitungBtn = new QPushButton(QStringLiteral("↺ Vorbereitung"), rechts);
+            m_vorbereitungBtn->setToolTip(QStringLiteral(
+                "Wiederholt die Vorbereitung dieses Abschnitts — hast du etwas verstellt, lade die Vorlage einfach neu."));
+            m_aktionStand = new QLabel(rechts);
+            m_aktionStand->setWordWrap(true);
+            m_aktionStand->setTextFormat(Qt::RichText);
+            m_aktionStand->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+            aktionsZeile->addWidget(m_herstellen);
+            aktionsZeile->addWidget(m_vorbereitungBtn);
+            aktionsZeile->addWidget(m_aktionStand, 1);
+            col->addLayout(aktionsZeile);
+            m_neuFrist.setSingleShot(true);
+
             auto* knoepfe = new QHBoxLayout();
             auto* zurueck = new QPushButton(QStringLiteral("◀ Zurück"), rechts);
             auto* weiter = new QPushButton(QStringLiteral("Weiter ▶"), rechts);
@@ -371,6 +392,11 @@ namespace
             knoepfe->addWidget(zurueck);
             knoepfe->addWidget(weiter);
             knoepfe->addStretch();
+            // Eine Vorbereitung bekommt kein Urteil, sondern »Weiter →«.
+            m_weiterPrep = new QPushButton(QStringLiteral("Weiter →"), rechts);
+            m_weiterPrep->setVisible(false);
+            knoepfe->addWidget(m_weiterPrep);
+            m_urteil = { offenBtn, skip, fail, passBefund, pass };
             knoepfe->addWidget(offenBtn);
             knoepfe->addWidget(skip);
             knoepfe->addWidget(fail);
@@ -400,11 +426,28 @@ namespace
             m_steuerungZeile->setStyleSheet(QStringLiteral("color:#8a8a8a;"));
             m_steuerungZeile->setTextInteractionFlags(Qt::TextSelectableByMouse);
             lay->addWidget(m_steuerungZeile);
-            m_steuerung.beiAenderung = [this]() { m_steuerungZeile->setText(m_steuerung.zustandsText()); };
+            m_steuerung.beiAenderung = [this]() {
+                zeigeSteuerung();
+                aktualisiereAktionen();
+                weiterNachNeustart();
+            };
             m_steuerung.beiMeldung = [this](const QString& anwendung, const QString& text) {
                 m_steuerungZeile->setText(QStringLiteral("%1 — %2: %3")
                                               .arg(m_steuerung.zustandsText(), anwendung, text));
             };
+            connect(m_herstellen, &QPushButton::clicked, this, [this]() {
+                if (m_lauf.aktiv) brichAb();
+                else starteAktionen(m_idx, aktionenVon(m_p, m_idx));
+            });
+            connect(m_vorbereitungBtn, &QPushButton::clicked, this, [this]() {
+                const int v = vorbereitungVon(m_p, m_idx);
+                starteAktionen(v, aktionenVon(m_p, v));
+            });
+            connect(m_weiterPrep, &QPushButton::clicked, this, [this]() { gehe(+1); });
+            connect(&m_neuFrist, &QTimer::timeout, this, [this]() {
+                if (m_lauf.aktiv && m_lauf.wartetAufNeu)
+                    beendeLauf(QStringLiteral("die Anwendung hat sich nach 60 s nicht wieder verbunden"));
+            });
 
             connect(m_combo, &QComboBox::activated, this, [this](int i) {
                 oeffne(m_combo->itemData(i).toString(), false);
@@ -569,14 +612,20 @@ namespace
                     : QStringLiteral(" · Exe vom %1").arg(m_exeZeit);
             kopf += lauf.isEmpty() ? QStringLiteral(" · neuer Lauf")
                                    : QStringLiteral(" · Lauf vom %1 fortgesetzt").arg(m_gestartet);
+            for (const QString& h : std::as_const(m_p.hinweise))
+                kopf += QStringLiteral("<br><span style='color:#d64545;'>⚠ %1</span>").arg(h.toHtmlEscaped());
             m_kopfzeile->setText(kopf);
             m_kopfzeile->setToolTip(m_p.beschreibung);
 
+            m_lauf = {};
+            m_neuFrist.stop();
+            m_aktionStand->clear();
             m_idx = -1;
             fuelleListe();
             const int erster = naechsterOffene(-1);
-            zeige(erster >= 0 ? erster : 0);
+            zeige(erster >= 0 ? mitVorbereitung(erster, -1) : 0);
             aktualisiereSumme();
+            zeigeSteuerung();
         }
 
         QJsonObject schritt(int idx) const { return m_p.schritte.at(idx).toObject(); }
@@ -660,6 +709,8 @@ namespace
                 m_liste->scrollToItem(it);
                 m_fuellt = false;
             }
+            if (!m_lauf.aktiv) m_aktionStand->clear();
+            aktualisiereAktionen();
         }
 
         void zeigeStand(const QJsonObject& s)
@@ -670,6 +721,7 @@ namespace
                 { QStringLiteral("pass_remark"), QStringLiteral("Pass mit Befund") },
                 { QStringLiteral("fail"), QStringLiteral("Fail") },
                 { QStringLiteral("skip"), QStringLiteral("übersprungen") },
+                { QStringLiteral("prep"), QStringLiteral("Vorbereitung, ohne Urteil") },
             };
             QString t = QStringLiteral("%1 · %2 von %3 · ")
                 .arg(s.value(QStringLiteral("section")).toString())
@@ -710,7 +762,7 @@ namespace
 
         void bewerte(const QString& ergebnis)
         {
-            if (m_idx < 0) return;
+            if (m_idx < 0 || istVorbereitung(schritt(m_idx))) return;
             merkeBemerkung();
             QJsonObject s = schritt(m_idx);
             const bool beleg = !s.value(QStringLiteral("remark")).toString().isEmpty()
@@ -730,9 +782,10 @@ namespace
             schreibe();
             if (QListWidgetItem* it = eintrag(m_idx)) beschrifte(it, s);
 
-            const int weiter = ergebnis == QLatin1String("open") ? -1 : naechsterOffene(m_idx);
+            int weiter = ergebnis == QLatin1String("open") ? -1 : naechsterOffene(m_idx);
             if (weiter >= 0)
             {
+                weiter = mitVorbereitung(weiter, m_idx);
                 if (m_nurOffene->isChecked()) { m_idx = weiter; fuelleListe(); m_idx = -1; }
                 zeige(weiter);
             }
@@ -870,6 +923,485 @@ namespace
             m_summe->setText(t);
             m_summe->setToolTip(QDir::toNativeSeparators(reportPfad()));
         }
+
+        // --- Aktionen (Konzept §6) ---------------------------------------------
+
+        struct Lauf
+        {
+            bool aktiv = false;
+            int idx = -1;                // Punkt, in dessen Log die Aktionen stehen
+            QJsonArray liste;
+            int pos = 0;
+            quint64 token = 0;           // eine Antwort mit altem Token wird verworfen
+            bool fortsetzen = false;     // Vorbereitung eines schon bewerteten Laufs (§6.4)
+            bool abbrechbar = false;     // die laufende Aktion wartet auf den Menschen
+            bool beendet = false;        // die laufende Aktion beendet die Anwendung …
+            bool wartetAufNeu = false;   // … und danach stehen noch Aktionen an
+            qint64 altePid = 0;
+        };
+
+        // Wechselt der nächste offene Punkt den Abschnitt, steht dessen Vorbereitung davor.
+        int mitVorbereitung(int offen, int von) const
+        {
+            const auto sektion = [this](int i) { return schritt(i).value(QStringLiteral("section")).toString(); };
+            if (von >= 0 && sektion(von) == sektion(offen)) return offen;
+            while (offen > 0 && istVorbereitung(schritt(offen - 1))) --offen;
+            return offen;
+        }
+
+        QString anwendungsName() const
+        {
+            const Steuerung::Anwendung* a = m_steuerung.anwendung(m_p.anwendung);
+            return a ? QStringLiteral("%1 %2").arg(a->name, a->version) : m_p.anwendung;
+        }
+
+        QStringList schalterVon(const QString& aktion) const
+        {
+            const Steuerung::Anwendung* a = m_steuerung.anwendung(m_p.anwendung);
+            if (!a) return {};
+            for (const QJsonValue& v : a->aktionen)
+                if (v.toObject().value(QStringLiteral("name")).toString() == aktion)
+                    return v.toObject().value(QStringLiteral("schalter")).toVariant().toStringList();
+            return {};
+        }
+
+        bool hatBewertung() const
+        {
+            const Zaehler z = zaehle(m_p.schritte);
+            return z.pass + z.passBefund + z.fail + z.skip > 0;
+        }
+
+        // Statuszeile: Zustand der Steuerung, dazu die Aktionen der Liste, die die Anwendung nicht kennt.
+        void zeigeSteuerung()
+        {
+            QString t = m_steuerung.zustandsText();
+            if (m_steuerung.anwendung(m_p.anwendung))
+            {
+                QStringList fremd;
+                for (int n = 0; n < m_p.schritte.size(); ++n)
+                {
+                    const QJsonArray aktionen = aktionenVon(m_p, n);
+                    for (const QJsonValue& v : aktionen)
+                    {
+                        const QString name = v.toObject().value(QStringLiteral("aktion")).toString();
+                        if (!v.toObject().value(QStringLiteral("unbekannt")).toBool() && !fremd.contains(name)
+                            && !m_steuerung.kennt(m_p.anwendung, name))
+                            fremd.append(name);
+                    }
+                }
+                if (!fremd.isEmpty())
+                    t += (fremd.size() == 1 ? QStringLiteral(" · 1 Aktion der Liste kennt %2 nicht: %3")
+                                            : QStringLiteral(" · %1 Aktionen der Liste kennt %2 nicht: %3")
+                                                  .arg(fremd.size()))
+                             .arg(anwendungsName(), fremd.join(QStringLiteral(", ")));
+            }
+            m_steuerungZeile->setText(t);
+        }
+
+        void aktualisiereAktionen()
+        {
+            const bool da = m_idx >= 0 && m_idx < m_p.schritte.size();
+            const bool prep = da && istVorbereitung(schritt(m_idx));
+            const bool verbunden = m_steuerung.anwendung(m_p.anwendung) != nullptr;
+            const QJsonArray eigene = da ? aktionenVon(m_p, m_idx) : QJsonArray();
+            const int v = da && !prep ? vorbereitungVon(m_p, m_idx) : -1;
+
+            for (QPushButton* k : std::as_const(m_urteil)) k->setVisible(!prep);
+            m_weiterPrep->setVisible(prep);
+            m_herstellen->setVisible(!eigene.isEmpty() || prep || m_lauf.aktiv);
+            m_vorbereitungBtn->setVisible(v >= 0 && !aktionenVon(m_p, v).isEmpty());
+            if (m_lauf.aktiv)
+            {
+                m_herstellen->setText(QStringLiteral("Abbrechen"));
+                m_herstellen->setEnabled(m_lauf.abbrechbar || m_lauf.wartetAufNeu);
+                m_vorbereitungBtn->setEnabled(false);
+                return;
+            }
+            m_herstellen->setText(prep ? QStringLiteral("▶ Ausführen") : QStringLiteral("▶ Herstellen"));
+            m_herstellen->setEnabled(verbunden && !eigene.isEmpty());
+            m_vorbereitungBtn->setEnabled(verbunden);
+            QStringList namen;
+            for (const QJsonValue& a : eigene) namen.append(a.toObject().value(QStringLiteral("aktion")).toString());
+            m_herstellen->setToolTip(verbunden
+                ? QStringLiteral("Löst in %1 aus: %2").arg(anwendungsName(), namen.join(QStringLiteral(", ")))
+                : QStringLiteral("Keine Anwendung verbunden — der Handgriff steht im Text."));
+        }
+
+        void starteAktionen(int logIdx, const QJsonArray& liste)
+        {
+            if (m_lauf.aktiv || liste.isEmpty() || logIdx < 0) return;
+            if (!m_steuerung.anwendung(m_p.anwendung)) return;
+
+            // Was Zustand verwerfen kann, fragt der Tester vorher — einmal für alle (§3, fragt_nach).
+            QStringList heikel;
+            for (const QJsonValue& v : liste)
+            {
+                const QString name = v.toObject().value(QStringLiteral("aktion")).toString();
+                if (schalterVon(name).contains(QLatin1String("fragt_nach"))) heikel.append(name);
+            }
+            if (!heikel.isEmpty() && !m_ohneRueckfrage
+                && QMessageBox::question(this, QStringLiteral("Sichttest"),
+                       QStringLiteral("Gleich verändert %1 seinen Zustand — Ungespeichertes kann verloren gehen:\n\n%2\n\n"
+                                      "Ausführen?").arg(anwendungsName(), heikel.join(QStringLiteral(", "))))
+                   != QMessageBox::Yes)
+                return;
+
+            m_lauf = {};
+            m_lauf.aktiv = true;
+            m_lauf.idx = logIdx;
+            m_lauf.liste = liste;
+            m_lauf.token = ++m_token;
+            m_lauf.fortsetzen = istVorbereitung(schritt(logIdx)) && hatBewertung();
+            naechsteAktion();
+        }
+
+        void logge(const QJsonObject& aktion, const QString& status, const QString& text)
+        {
+            QJsonObject eintrag;
+            eintrag.insert(QStringLiteral("aktion"), aktion.value(QStringLiteral("aktion")));
+            eintrag.insert(QStringLiteral("mit"), aktion.value(QStringLiteral("mit")).toObject());
+            eintrag.insert(QStringLiteral("status"), status);
+            eintrag.insert(QStringLiteral("text"), text);
+            eintrag.insert(QStringLiteral("at"), QDateTime::currentDateTime().toString(Qt::ISODate));
+            QJsonObject s = schritt(m_lauf.idx);
+            QJsonArray log = s.value(QStringLiteral("actions")).toArray();
+            log.append(eintrag);
+            s.insert(QStringLiteral("actions"), log);
+            m_p.schritte.replace(m_lauf.idx, s);
+        }
+
+        void naechsteAktion()
+        {
+            for (;;)
+            {
+                if (m_lauf.pos >= m_lauf.liste.size())
+                {
+                    beendeLauf({});
+                    return;
+                }
+                const QJsonObject a = m_lauf.liste.at(m_lauf.pos).toObject();
+                const QString name = a.value(QStringLiteral("aktion")).toString();
+                const Steuerung::Anwendung* app = m_steuerung.anwendung(m_p.anwendung);
+                if (!app)
+                {
+                    aktionFertig(QStringLiteral("getrennt"), QStringLiteral("keine Anwendung verbunden"));
+                    return;
+                }
+                if (a.value(QStringLiteral("unbekannt")).toBool() || !m_steuerung.kennt(m_p.anwendung, name))
+                {
+                    aktionFertig(QStringLiteral("unbekannt"),
+                                 QStringLiteral("%1 kennt diese Aktion nicht").arg(anwendungsName()));
+                    return;
+                }
+                const QStringList schalter = schalterVon(name);
+                if (m_lauf.fortsetzen && schalter.contains(QLatin1String("nur_erstlauf")))
+                {
+                    logge(a, QStringLiteral("ausgelassen"),
+                          QStringLiteral("nur im ersten Lauf — beim Fortsetzen wird nicht abgeräumt"));
+                    ++m_lauf.pos;
+                    continue;
+                }
+
+                // Frist je Aufruf 10 s, in JSON je Aktion als "frist" in Sekunden änderbar;
+                // wartet die Aktion auf den Menschen, gilt keine.
+                m_lauf.abbrechbar = schalter.contains(QLatin1String("wartet_auf_mensch"));
+                m_lauf.beendet = schalter.contains(QLatin1String("beendet_anwendung"));
+                m_lauf.altePid = app->pid;
+                const int fristMs = m_lauf.abbrechbar ? 0 : a.value(QStringLiteral("frist")).toInt(10) * 1000;
+                m_aktionStand->setText((m_lauf.abbrechbar ? QStringLiteral("wartet auf die Anwendung: %1")
+                                                          : QStringLiteral("läuft: %1 …")).arg(name.toHtmlEscaped()));
+                aktualisiereAktionen();
+                const quint64 token = m_lauf.token;
+                m_steuerung.rufe(m_p.anwendung, name, a.value(QStringLiteral("mit")).toObject(),
+                                 QFileInfo(m_p.pfad).absolutePath(), fristMs,
+                                 [this, token](const QString& status, const QString& text) {
+                                     if (m_lauf.aktiv && m_lauf.token == token) aktionFertig(status, text);
+                                 });
+                return;
+            }
+        }
+
+        void aktionFertig(const QString& status, const QString& text)
+        {
+            const QJsonObject a = m_lauf.liste.at(m_lauf.pos).toObject();
+            logge(a, status, text);
+            // Endet die Anwendung, bevor ihre Antwort da ist, war das bei dieser Aktion gewollt.
+            const bool gut = status == QLatin1String("ok") || (m_lauf.beendet && status == QLatin1String("getrennt"));
+            if (!gut)
+            {
+                beendeLauf(text.isEmpty() ? status : text);
+                return;
+            }
+            ++m_lauf.pos;
+            if (m_lauf.beendet && m_lauf.pos < m_lauf.liste.size())
+            {
+                m_lauf.beendet = false;
+                m_lauf.wartetAufNeu = true;
+                m_neuFrist.start(60000);
+                m_aktionStand->setText(QStringLiteral("Anwendung startet neu — warte auf die neue Verbindung …"));
+                aktualisiereAktionen();
+                weiterNachNeustart();
+                return;
+            }
+            naechsteAktion();
+        }
+
+        void weiterNachNeustart()
+        {
+            if (!m_lauf.aktiv || !m_lauf.wartetAufNeu) return;
+            const Steuerung::Anwendung* app = m_steuerung.anwendung(m_p.anwendung);
+            if (!app || app->pid == m_lauf.altePid) return;
+            m_lauf.wartetAufNeu = false;
+            m_neuFrist.stop();
+            naechsteAktion();
+        }
+
+        void brichAb()
+        {
+            if (!m_lauf.aktiv) return;
+            if (m_lauf.pos < m_lauf.liste.size())
+                logge(m_lauf.liste.at(m_lauf.pos).toObject(), QStringLiteral("abgebrochen"),
+                      QStringLiteral("im Tester abgebrochen"));
+            beendeLauf(QStringLiteral("abgebrochen — eine späte Antwort wird verworfen"));
+        }
+
+        // fehler leer = alles ausgeführt. Sonst steht die Meldung rot am Punkt, darunter der
+        // Handgriff als Text — der Lauf hält nie an, das Urteil bleibt beim Menschen (§6.3).
+        void beendeLauf(const QString& fehler)
+        {
+            const QJsonObject a = m_lauf.liste.at(m_lauf.pos).toObject();
+            const int idx = m_lauf.idx;
+            const int erledigt = m_lauf.pos;
+            m_lauf.aktiv = false;
+            m_neuFrist.stop();
+            schreibe();
+            if (fehler.isEmpty())
+            {
+                m_aktionStand->setText(erledigt == 1 ? QStringLiteral("✓ 1 Aktion ausgeführt")
+                                                     : QStringLiteral("✓ %1 Aktionen ausgeführt").arg(erledigt));
+            }
+            else
+            {
+                QString hand = a.value(QStringLiteral("text")).toString();
+                if (hand.isEmpty()) hand = schritt(idx).value(QStringLiteral("text")).toString();
+                if (hand.size() > 300) hand = hand.left(300) + QStringLiteral(" …");
+                m_aktionStand->setText(QStringLiteral("<span style='color:#d64545;'>%1: %2</span><br>von Hand: %3")
+                    .arg(a.value(QStringLiteral("aktion")).toString().toHtmlEscaped(), fehler.toHtmlEscaped(),
+                         hand.toHtmlEscaped()));
+            }
+            aktualisiereAktionen();
+        }
+
+        // --- Selbsttest der Aktionen -------------------------------------------
+
+        using Pruefe = std::function<void(bool, const QString&)>;
+
+        static bool warteBis(const std::function<bool()>& fertig, int ms)
+        {
+            QElapsedTimer uhr;
+            uhr.start();
+            while (!fertig() && uhr.elapsed() < ms)
+            {
+                QCoreApplication::processEvents();
+                QThread::msleep(5);
+            }
+            return fertig();
+        }
+
+        int findeSchritt(const QString& id) const
+        {
+            for (int n = 0; n < m_p.schritte.size(); ++n)
+                if (schritt(n).value(QStringLiteral("id")).toString() == id) return n;
+            return -1;
+        }
+
+        QJsonArray ausgeloest(const QString& id) const
+        {
+            return schritt(findeSchritt(id)).value(QStringLiteral("actions")).toArray();
+        }
+
+        static QString aktionenListe()
+        {
+            return QStringLiteral(
+                "# Aktionen\n\n"
+                "**Anwendung:** Gegenprobe · **Exe:** `Gegenprobe.exe`\n\n"
+                "- [ ] **V0 Vorbereiten:** Alles herrichten. `aktion: echo text=\"für alle\"`\n\n"
+                "## G. Gruppe\n\n"
+                "- [ ] **G0 Vorbereiten:** Vorlage laden, dann Edit an.\n"
+                "      `aktion: echo datei=\"asset\\sicht test\\a.lvcomp\"` `aktion: echo an`\n"
+                "- [ ] **G1 Eins:** Marke setzen. `aktion: echo zeit=0:20`\n"
+                "- [ ] **G2 Zwei:** Wie G0, dazu mehr. `aktion: @G0` `aktion: echo edit=an`\n"
+                "- [ ] **G3 Scheitert:** Von Hand zu tun. `aktion: scheitert`\n"
+                "- [ ] **G4 Unbekannt:** Auch von Hand. `aktion: gibt_es_nicht`\n"
+                "- [ ] **G5 Kreis:** Verweist auf sich. `aktion: @G5`\n"
+                "- [ ] **G6 Neustart:** Beendet die Anwendung, danach weiter. `aktion: ende` `aktion: echo nach=neustart`\n"
+                "- [ ] **G7 Ohne:** Ein Punkt wie bisher.\n");
+        }
+
+        // Der Leser allein, ohne Verbindung.
+        void selbsttestListen(const QDir& d, const Pruefe& pruefe)
+        {
+            const Protokoll p = ausMarkdown(aktionenListe(), d.filePath(QStringLiteral("Aktionen.md")));
+            auto idx = [&](const char* id) {
+                for (int n = 0; n < p.schritte.size(); ++n)
+                    if (p.schritte.at(n).toObject().value(QStringLiteral("id")).toString() == QLatin1String(id)) return n;
+                return -1;
+            };
+            auto s = [&](const char* id) { return p.schritte.at(idx(id)).toObject(); };
+            pruefe(p.schritte.size() == 9 && istVorbereitung(s("V0")) && istVorbereitung(s("G0"))
+                   && !istVorbereitung(s("G1")) && zaehle(p.schritte).offen == 7,
+                   QStringLiteral("Liste mit Aktionen: neun Punkte, zwei Vorbereitungen zählen nicht mit"));
+            pruefe(p.anwendung == QLatin1String("Gegenprobe") && p.exe == QLatin1String("Gegenprobe.exe"),
+                   QStringLiteral("Vorspann nennt die Anwendung (»%1«)").arg(p.anwendung));
+            pruefe(s("G1").value(QStringLiteral("text")).toString() == QLatin1String("Marke setzen."),
+                   QStringLiteral("das Stück `aktion: …` steht nicht im gezeigten Text"));
+            const QJsonArray g0 = aktionenVon(p, idx("G0"));
+            pruefe(g0.size() == 2
+                   && g0.at(0).toObject().value(QStringLiteral("mit")).toObject().value(QStringLiteral("datei")).toString()
+                          == QLatin1String("asset\\sicht test\\a.lvcomp")
+                   && g0.at(1).toObject().value(QStringLiteral("mit")).toObject().value(QStringLiteral("wert")).toString()
+                          == QLatin1String("an"),
+                   QStringLiteral("Werte in \"…\" behalten Leerzeichen und \\; ein Wert ohne Schlüssel heißt wert"));
+            const QJsonArray g2 = aktionenVon(p, idx("G2"));
+            pruefe(g2.size() == 3
+                   && g2.at(2).toObject().value(QStringLiteral("mit")).toObject().value(QStringLiteral("edit")).toString()
+                          == QLatin1String("an"),
+                   QStringLiteral("Verweis @G0 fügt dessen Aktionen an seiner Stelle ein"));
+            pruefe(p.hinweise.size() == 1 && p.hinweise.first().contains(QLatin1String("Kreis"))
+                   && aktionenVon(p, idx("G5")).at(0).toObject().value(QStringLiteral("unbekannt")).toBool(),
+                   QStringLiteral("ein Verweis im Kreis wird beim Laden gemeldet (»%1«)").arg(p.hinweise.join(QLatin1Char(' '))));
+            pruefe(vorbereitungVon(p, idx("G1")) == idx("G0") && vorbereitungVon(p, idx("G0")) == idx("G0"),
+                   QStringLiteral("zu einem Punkt gehört die Vorbereitung seines Abschnitts"));
+
+            const QJsonObject wurzel = QJsonDocument::fromJson(QByteArray(R"({
+                "title": "J", "anwendung": "CommStudio",
+                "vorbereitung": [ { "aktion": "datei_oeffnen", "mit": { "pfad": "examples/demo.project.json" },
+                                    "text": "Projekt demo öffnen" } ],
+                "nachbereitung": [ { "aktion": "testdb_abbauen" } ],
+                "steps": [
+                  { "id": "db-00", "kind": "prep", "section": "A", "title": "Vorbereiten", "text": "…",
+                    "aktionen": [ { "aktion": "tab_zeigen", "mit": { "titel": "Datenbank" }, "frist": 20 } ] },
+                  { "id": "db-01", "section": "A", "title": "Eins", "text": "…",
+                    "aktionen": [ { "aktion": "@db-00" } ] },
+                  { "id": "db-02", "section": "B", "title": "Zwei", "text": "…" } ] })")).object();
+            const Protokoll j = ausJson(wurzel, d.filePath(QStringLiteral("J.testprotokoll.json")));
+            pruefe(j.schritte.size() == 4 && j.anwendung == QLatin1String("CommStudio") && j.nachbereitung.size() == 1
+                   && istVorbereitung(j.schritte.at(0).toObject()) && istVorbereitung(j.schritte.at(1).toObject())
+                   && zaehle(j.schritte).offen == 2,
+                   QStringLiteral("JSON: vorbereitung wird ein Punkt vor dem ersten Abschnitt, kind prep zählt nicht mit"));
+            pruefe(aktionenVon(j, 2).size() == 1
+                   && aktionenVon(j, 2).at(0).toObject().value(QStringLiteral("frist")).toInt() == 20
+                   && vorbereitungVon(j, 3) == 0 && vorbereitungVon(j, 2) == 1,
+                   QStringLiteral("JSON: aktionen mit Verweis und Frist; Abschnitt ohne eigene Vorbereitung nimmt die der Liste"));
+        }
+
+        // Die Knöpfe ▶ gegen die Gegenprobe.
+        void selbsttestAktionen(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
+        {
+            const QString liste = d.filePath(QStringLiteral("Aktionen.md"));
+            {
+                QFile f(liste);
+                if (!f.open(QIODevice::WriteOnly)) { pruefe(false, QStringLiteral("Aktionen.md schreiben")); return; }
+                f.write(aktionenListe().toUtf8());
+            }
+            m_ohneRueckfrage = true;
+            oeffne(liste, true);
+            pruefe(m_idx == findeSchritt(QStringLiteral("V0")),
+                   QStringLiteral("eine Liste beginnt bei ihrer Vorbereitung"));
+            pruefe(!m_herstellen->isEnabled() && m_herstellen->text() == QStringLiteral("▶ Ausführen")
+                   && !m_weiterPrep->isHidden() && m_urteil.first()->isHidden(),
+                   QStringLiteral("Vorbereitung: Ausführen und Weiter statt Urteil; ohne Anwendung ist ▶ grau"));
+
+            const QString kanal = QStringLiteral("sichttest-selbsttest-%1-liste").arg(QCoreApplication::applicationPid());
+            const QString g = QStringLiteral("Gegenprobe");
+            QProcess app;
+            pruefe(m_steuerung.lausche(kanal) && starteGegenprobe(app, QStringLiteral("anwendung"), kanal)
+                   && warteBis([&] { return m_steuerung.anwendung(g) != nullptr; }, 10000),
+                   QStringLiteral("Fenster lauscht, die Gegenprobe ist verbunden"));
+            pruefe(m_herstellen->isEnabled(), QStringLiteral("mit Anwendung ist ▶ Ausführen bereit"));
+            pruefe(m_steuerungZeile->text().contains(QLatin1String("1 Aktion der Liste kennt Gegenprobe 1.2.3 nicht: gibt_es_nicht")),
+                   QStringLiteral("Statuszeile nennt die Aktion, die die Anwendung nicht kennt"));
+
+            auto fuehreAus = [&](const QString& id, const QString& knopf) {
+                zeige(findeSchritt(id));
+                const bool geklickt = klicke(knopf);
+                warteBis([&] { return !m_lauf.aktiv; }, 15000);
+                return geklickt && !m_lauf.aktiv;
+            };
+            auto status = [](const QJsonArray& log, int n) { return log.at(n).toObject().value(QStringLiteral("status")).toString(); };
+
+            pruefe(fuehreAus(QStringLiteral("G0"), QStringLiteral("▶ Ausführen")), QStringLiteral("G0: Ausführen läuft durch"));
+            QJsonArray log = ausgeloest(QStringLiteral("G0"));
+            pruefe(log.size() == 2 && status(log, 0) == QLatin1String("ok") && status(log, 1) == QLatin1String("ok")
+                   && log.at(0).toObject().value(QStringLiteral("text")).toString().contains(QLatin1String("a.lvcomp")),
+                   QStringLiteral("G0: zwei Aktionen der Reihe nach, im Log des Punkts mit Status und Text"));
+            pruefe(m_aktionStand->text().contains(QStringLiteral("2 Aktionen ausgeführt")),
+                   QStringLiteral("G0: das Fenster meldet den Erfolg"));
+
+            pruefe(fuehreAus(QStringLiteral("G2"), QStringLiteral("▶ Herstellen")) && ausgeloest(QStringLiteral("G2")).size() == 3,
+                   QStringLiteral("G2: Herstellen führt den Verweis und die eigene Aktion aus (drei)"));
+
+            fuehreAus(QStringLiteral("G3"), QStringLiteral("▶ Herstellen"));
+            log = ausgeloest(QStringLiteral("G3"));
+            pruefe(log.size() == 1 && status(log, 0) == QLatin1String("fehler")
+                   && m_aktionStand->text().contains(QLatin1String("absichtlich gescheitert"))
+                   && m_aktionStand->text().contains(QLatin1String("von Hand: Von Hand zu tun.")),
+                   QStringLiteral("G3: Meldung der Anwendung am Punkt, darunter der Handgriff als Text"));
+            pruefe(schritt(findeSchritt(QStringLiteral("G3"))).value(QStringLiteral("result")).toString() == QLatin1String("open"),
+                   QStringLiteral("G3: eine gescheiterte Aktion macht den Punkt nicht zu Fail"));
+
+            fuehreAus(QStringLiteral("G4"), QStringLiteral("▶ Herstellen"));
+            log = ausgeloest(QStringLiteral("G4"));
+            pruefe(log.size() == 1 && status(log, 0) == QLatin1String("unbekannt")
+                   && m_aktionStand->text().contains(QLatin1String("von Hand")),
+                   QStringLiteral("G4: unbekannte Aktion fällt auf den Text zurück"));
+
+            pruefe(fuehreAus(QStringLiteral("G1"), QStringLiteral("↺ Vorbereitung")) && ausgeloest(QStringLiteral("G0")).size() == 4,
+                   QStringLiteral("G1: ↺ Vorbereitung wiederholt die Vorbereitung des Abschnitts"));
+
+            zeige(findeSchritt(QStringLiteral("G7")));
+            pruefe(m_herstellen->isHidden() && !m_vorbereitungBtn->isHidden(),
+                   QStringLiteral("G7: ein Punkt ohne Aktionen zeigt kein ▶ Herstellen, aber ↺ Vorbereitung"));
+
+            const QJsonObject aufPlatte = leseJson(m_logPfad);
+            pruefe(aufPlatte.value(QStringLiteral("steps")).toArray().at(findeSchritt(QStringLiteral("G0"))).toObject()
+                       .value(QStringLiteral("actions")).toArray().size() == 4
+                   && aufPlatte.value(QStringLiteral("summary")).toObject().value(QStringLiteral("open")).toInt() == 7,
+                   QStringLiteral("das Testlog trägt actions[] je Punkt; die Summe zählt sieben offene Punkte"));
+
+            // Neustart: die erste Aktion beendet die Anwendung, die zweite läuft nach dem Wiederverbinden.
+            zeige(findeSchritt(QStringLiteral("G6")));
+            klicke(QStringLiteral("▶ Herstellen"));
+            pruefe(warteBis([&] { return m_lauf.aktiv && m_lauf.wartetAufNeu; }, 10000)
+                   && warteBis([&] { return app.state() == QProcess::NotRunning; }, 5000),
+                   QStringLiteral("G6: nach »ende« wartet der Tester auf die neue Verbindung, statt einen Fehler zu melden"));
+            QProcess neu;
+            starteGegenprobe(neu, QStringLiteral("anwendung"), kanal);
+            warteBis([&] { return !m_lauf.aktiv; }, 15000);
+            log = ausgeloest(QStringLiteral("G6"));
+            pruefe(!m_lauf.aktiv && log.size() == 2 && status(log, 1) == QLatin1String("ok")
+                   && log.at(1).toObject().value(QStringLiteral("text")).toString().contains(QLatin1String("neustart")),
+                   QStringLiteral("G6: die neu gestartete Anwendung verbindet sich, die zweite Aktion läuft"));
+
+            bool beendet = false;
+            m_steuerung.rufe(g, QStringLiteral("ende"), {}, {}, 5000, [&beendet](const QString&, const QString&) { beendet = true; });
+            warteBis([&] { return beendet && neu.state() == QProcess::NotRunning; }, 5000);
+            if (neu.state() != QProcess::NotRunning) neu.kill();
+            neu.waitForFinished(2000);
+            app.waitForFinished(2000);
+            m_steuerung.beiAenderung = nullptr;
+            m_steuerung.beiMeldung = nullptr;
+        }
+
+        Lauf      m_lauf;
+        quint64   m_token = 0;
+        bool      m_ohneRueckfrage = false;   // nur der Selbsttest: keine Rückfrage vor fragt_nach
+        QTimer    m_neuFrist;
+        QPushButton* m_herstellen = nullptr;
+        QPushButton* m_vorbereitungBtn = nullptr;
+        QPushButton* m_weiterPrep = nullptr;
+        QLabel*      m_aktionStand = nullptr;
+        QList<QPushButton*> m_urteil;
 
         Protokoll m_p;
         QString   m_ordner;
