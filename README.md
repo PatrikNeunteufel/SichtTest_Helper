@@ -92,8 +92,10 @@ Sichttest --steuerung
 - Ohne Argument: der zuletzt benutzte Ordner und das zuletzt benutzte
   Protokoll; beim ersten Start der Ordner `.claude/handover`, vom
   Arbeitsverzeichnis oder vom Ort der Exe aufwärts gesucht.
-- Liegt im Ordner oder darüber eine `sichttest.projekt.json`, gelten deren
-  Listen und Ablage (siehe „Projektdatei").
+- Liegt im Ordner oder darüber ein Ordner `.sichttest` mit einer
+  `sichttest.projekt.json`, gelten deren Listen und Ablage (siehe „Projektdatei").
+- Eine ausdrücklich genannte Projektdatei muss ebenfalls in einem Ordner
+  `.sichttest` liegen; ihr Name ist frei, muss aber auf `.projekt.json` enden.
 - `--steuerung`: so startet die DLL der geprüften Anwendung das Werkzeug, wenn
   keines lauscht. Es öffnet dann die Listen des Projekts dieser Anwendung.
 - `--pruefe` gibt die erkannten Schritte auf die Standardausgabe.
@@ -154,9 +156,11 @@ Verbindung verhält sich die Liste wie eine ohne Aktionen.
 
 ### Projektdatei
 
-Eine `sichttest.projekt.json` im Repo der geprüften Anwendung sagt dem Werkzeug, was es über
-das Projekt wissen muss (Beschreibung: `docs/Konzept_Steuerung.md` §7). Pfade sind relativ zur
-Datei; unbekannte Schlüssel werden überlesen.
+Die Datei `.sichttest/sichttest.projekt.json` im Root des Repos der geprüften Anwendung sagt dem
+Werkzeug, was es über das Projekt wissen muss (Beschreibung: `docs/Konzept_Steuerung.md` §7).
+Pfade gelten ab dem Root, also dem Ordner über `.sichttest`; unbekannte Schlüssel werden
+überlesen. Eine Projektdatei, die nicht in einem Ordner `.sichttest` liegt, lädt das Werkzeug
+nicht und meldet es.
 
 ```json
 {
@@ -175,7 +179,7 @@ Datei; unbekannte Schlüssel werden überlesen.
 |---|---|---|
 | `anwendung` | Name, unter dem sich die Anwendung meldet; gilt für Listen, die keinen nennen | die zuletzt verbundene Anwendung |
 | `start` | womit **▶ Exe starten** die Anwendung startet | die Exe aus der Liste, ohne Argumente |
-| `listen[]` | Ordner mit Listen (oder einzelne Listen), je mit `ablage` und `muster` | der Ordner der Projektdatei, Ablage `sichttest-logs/` |
+| `listen[]` | Ordner mit Listen (oder einzelne Listen), je mit `ablage` und `muster` | der Root des Projekts, Ablage `sichttest-logs/` im Root |
 | `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst | das Feld wird gelesen und als Text gezeigt |
 | `gewichtung` | Dateien des Nachtest-Indikators | wird gelesen, wirkt noch nicht |
 

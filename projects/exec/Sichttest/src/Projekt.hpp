@@ -3,7 +3,10 @@
 // Eine Datei je Anwendung, im Repo der Anwendung. Sie trägt, was der Tester über
 // das Projekt wissen muss und was sich ändern kann, ohne dass jemand übersetzt:
 // wo die Listen liegen, wohin die Läufe gehen, wie die Anwendung gestartet wird
-// und welche Aktion ein Feld des JSON-Formats auslöst. Pfade sind relativ zur Datei.
+// und welche Aktion ein Feld des JSON-Formats auslöst.
+//
+// Sie liegt im Ordner `.sichttest` im Root des Projekts; ihre Pfade gelten ab dem
+// Root, dem Ordner über `.sichttest`.
 //
 // Ohne Projektdatei verhält sich das Werkzeug wie bisher.
 #pragma once
@@ -25,7 +28,7 @@ namespace sichttest
         };
 
         QString      pfad;             // die Projektdatei; leer = kein Projekt
-        QString      ordner;           // ihr Ordner
+        QString      root;             // Root des Projekts: der Ordner über `.sichttest`
         int          schema = 1;
         QString      anwendung;        // Name, unter dem sich die Anwendung meldet
         QString      startExe;         // absolut; leer = der Mensch startet sie
@@ -37,9 +40,13 @@ namespace sichttest
         bool gueltig() const { return !pfad.isEmpty(); }
     };
 
+    // Lädt nur eine Datei, die in einem Ordner `.sichttest` liegt; ihr Name ist frei.
     Projekt ladeProjekt(const QString& pfad, QString* fehler = nullptr);
 
-    // Von einem Ordner aufwärts die erste `sichttest.projekt.json`; leer = keine.
+    // Root zu einer Projektdatei: der Ordner über `.sichttest`; leer = sie liegt nicht in einem.
+    QString projektRoot(const QString& pfad);
+
+    // Von einem Ordner aufwärts die erste `.sichttest/sichttest.projekt.json`; leer = keine.
     QString findeProjektDatei(const QString& ordner);
 
     // Das Projekt, mit dem Listen gerade gelesen und Läufe abgelegt werden.

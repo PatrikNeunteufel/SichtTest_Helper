@@ -81,7 +81,7 @@ typedef struct {
     uint16_t    s_major, s_minor;/* STS_S_MAJOR / STS_S_MINOR der Anwendung */
     const char* anwendung;       /* "LumiViz", "CommStudio" — der Name, den Listen nennen */
     const char* version;         /* Version der Anwendung, landet im Testlog */
-    const char* projekt_datei;   /* optional: Pfad zu sichttest.projekt.json; sonst Suchregel §7 */
+    const char* projekt_datei;   /* optional: Pfad zur Projektdatei in einem Ordner .sichttest; sonst Suchregel §7 */
 } sts_konfig;
 
 /* Fassungen der DLL, ohne Sitzung abfragbar. Jeder Zeiger darf NULL sein. */

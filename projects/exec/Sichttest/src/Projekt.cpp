@@ -12,6 +12,7 @@ namespace sichttest
 {
     namespace
     {
+        const QString kOrdnerName = QStringLiteral(".sichttest");
         const QString kDateiName = QStringLiteral("sichttest.projekt.json");
 
         Projekt& aktuelles()
@@ -21,8 +22,23 @@ namespace sichttest
         }
     }
 
+    QString projektRoot(const QString& pfad)
+    {
+        QDir d(QFileInfo(pfad).absolutePath());
+        if (d.dirName().compare(kOrdnerName, Qt::CaseInsensitive) != 0 || !d.cdUp()) return {};
+        return d.absolutePath();
+    }
+
     Projekt ladeProjekt(const QString& pfad, QString* fehler)
     {
+        const QString root = projektRoot(pfad);
+        if (root.isEmpty())
+        {
+            if (fehler)
+                *fehler = QStringLiteral("Die Projektdatei %1 liegt nicht in einem Ordner %2.")
+                              .arg(QDir::toNativeSeparators(pfad), kOrdnerName);
+            return {};
+        }
         QFile f(pfad);
         if (!f.open(QIODevice::ReadOnly))
         {
@@ -38,13 +54,13 @@ namespace sichttest
         }
         const QJsonObject o = doc.object();
         const QFileInfo fi(pfad);
-        const QDir d(fi.absolutePath());
+        const QDir d(root);   // Pfade gelten ab dem Root (§7)
         auto absolut = [&d](const QString& p) { return QDir::cleanPath(d.absoluteFilePath(p)); };
 
         // Unbekannte Schlüssel werden überlesen (§7).
         Projekt p;
         p.pfad = fi.absoluteFilePath();
-        p.ordner = d.absolutePath();
+        p.root = d.absolutePath();
         p.schema = o.value(QStringLiteral("schema")).toInt(1);
         p.anwendung = o.value(QStringLiteral("anwendung")).toString();
         const QJsonObject start = o.value(QStringLiteral("start")).toObject();
@@ -65,8 +81,8 @@ namespace sichttest
             liste.muster = l.value(QStringLiteral("muster")).toString();
             p.listen.append(liste);
         }
-        // Ohne "listen": der Ordner der Projektdatei, Ablage sichttest-logs.
-        if (p.listen.isEmpty()) p.listen.append({ p.ordner, QString(), QString() });
+        // Ohne "listen": der Root, Ablage sichttest-logs.
+        if (p.listen.isEmpty()) p.listen.append({ p.root, QString(), QString() });
         p.gewichtung = o.value(QStringLiteral("gewichtung")).toObject();
         p.abbildung = o.value(QStringLiteral("abbildung")).toObject();
         return p;
@@ -75,10 +91,11 @@ namespace sichttest
     QString findeProjektDatei(const QString& ordner)
     {
         if (ordner.isEmpty()) return {};
+        const QString datei = kOrdnerName + QLatin1Char('/') + kDateiName;
         QDir d(ordner);
         for (int n = 0; n < 16; ++n)
         {
-            if (d.exists(kDateiName)) return d.absoluteFilePath(kDateiName);
+            if (d.exists(datei)) return d.absoluteFilePath(datei);
             if (!d.cdUp()) break;
         }
         return {};

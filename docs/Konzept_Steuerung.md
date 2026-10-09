@@ -4,7 +4,7 @@
 > Umsetzung von Patrik am 2026-10-08 gestaffelt freigegeben. **Gebaut und veröffentlicht sind die
 > Schritte 1 bis 3 aus §13** (bei SH und CC): DLL mit S 1.0, Protokoll P 1, die drei Köpfe,
 > Aktionen aus Listen, Projektdatei, Stufe 1 aus §14, CMakeCraft v0.10.0, Paket und Release
-> `v0.2.0`. Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
+> `v0.2.0`; seit `v0.3.0` liegt die Projektdatei unter `.sichttest/` (P2, §7). Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
 > Gezählt wird hier nach §13; im Sync heißen dieselben Abschnitte nach der Freigabe „3 und 4"
 > (CMakeCraft und Paket), „5" (LumiViz) und „6" (Comm Studio) ·
 > **Gehört:** SichtTest_Helper (Sync-Prefix SH) · **Verbindliche Spezifikation** seit 2026-10-09;
@@ -94,7 +94,7 @@ typedef struct {
     uint16_t    s_major, s_minor;/* STS_S_MAJOR / STS_S_MINOR der Anwendung */
     const char* anwendung;       /* "LumiViz", "CommStudio" — der Name, den Listen nennen */
     const char* version;         /* Version der Anwendung, landet im Testlog */
-    const char* projekt_datei;   /* optional: Pfad zu sichttest.projekt.json; sonst Suchregel §7 */
+    const char* projekt_datei;   /* optional: Pfad zur Projektdatei in einem Ordner .sichttest; sonst Suchregel §7 */
 } sts_konfig;
 
 /* Fassungen der DLL, ohne Sitzung abfragbar. */
@@ -233,7 +233,7 @@ eigenen kleinen JSON-Leser mit; die Argumente einer Aktion reicht sie ungeprüft
 | `willkommen` | Tester → DLL | gewählte Fassung `p`, Fassung des Testers |
 | `abgelehnt` | Tester → DLL | Grund als Text (keine gemeinsame Fassung) |
 | `aktionen` | DLL → Tester | nachgemeldete Aktionen |
-| `aufruf` | Tester → DLL | `id`, `aktion`, `argumente{}`, `basis` (Ordner der Projektdatei, sonst der Liste). Der Tester reicht jeden Wert **unverändert** durch, auch Pfade; aufgelöst wird in der Anwendung (das Comm Studio löst gegen Repo und Exe-Ordner auf und lässt nur Ziele darunter zu, `TestProtokollWindow.cpp:1407–1417`), `basis` ist nur ein Angebot |
+| `aufruf` | Tester → DLL | `id`, `aktion`, `argumente{}`, `basis` (Root des Projekts nach §7, sonst der Ordner der Liste). Der Tester reicht jeden Wert **unverändert** durch, auch Pfade; aufgelöst wird in der Anwendung (das Comm Studio löst gegen Repo und Exe-Ordner auf und lässt nur Ziele darunter zu, `TestProtokollWindow.cpp:1407–1417`), `basis` ist nur ein Angebot |
 | `antwort` | DLL → Tester | `id`, `status` (`ok`, `fehler`, `unbekannt`, `ungueltig`), `text` |
 | `meldung` | DLL → Tester | freier Text |
 | `tschuess` | beide | geordnetes Ende |
@@ -404,11 +404,14 @@ Die **Kennung eines Schritts** ist je Ablage eindeutig; die letzten Ergebnisse e
 werden je Ablage über alle Protokolle gelesen (`TestProtokollWindow.cpp:1197–1201`), damit ein
 verschobener Schritt seine Historie behält.
 
-## 7. Die Projektdatei `sichttest.projekt.json`
+## 7. Die Projektdatei `.sichttest/sichttest.projekt.json`
 
 **Eine Datei je Anwendung, im Repo der Anwendung, versioniert.** Sie trägt alles, was der Tester
-über das Projekt wissen muss und was sich ändern kann, ohne dass jemand übersetzt. Pfade sind
-relativ zur Datei.
+über das Projekt wissen muss und was sich ändern kann, ohne dass jemand übersetzt.
+
+**Ort und Root (P2, Patrik 2026-10-09):** Die Datei liegt im Ordner `.sichttest` im Root des
+Projekts. **Alle Pfade in der Datei gelten ab dem Root** — dem Ordner über `.sichttest` —, nicht
+relativ zur Datei. (Bis `v0.2.0` lag die Datei lose im Repo, und die Pfade galten relativ zu ihr.)
 
 ```json
 {
@@ -440,7 +443,7 @@ relativ zur Datei.
 | `schema` | Fassung dieser Datei; unbekannte Schlüssel werden überlesen | gilt als 1 |
 | `anwendung` | der Name, unter dem sich die Anwendung meldet (`sts_konfig.anwendung`) | der Tester nimmt die einzige verbundene Anwendung |
 | `start` | wie der Tester die Anwendung startet, **wenn sich in seiner Sitzung noch keine gemeldet hat**. Hatte sich eine gemeldet (Absturz, Neustart), startet er die Exe aus deren `hallo` — sonst holte er nach dem Absturz einer Debug-Exe die Release-Exe | er startet sie nicht, der Mensch tut es |
-| `listen[]` | Listenordner (oder einzelne Listen), je mit `ablage` und optional `muster` (Dateimuster, etwa `"Sichttest_Composer_*.md"` — ohne es nimmt das Werkzeug jede `*.md` mit Schritten). Ein genannter Ordner, den es nicht gibt, wird still übergangen (frischer Klon ohne `.claude/`) | Ordner der Projektdatei; Ablage `sichttest-logs/` |
+| `listen[]` | Listenordner (oder einzelne Listen), je mit `ablage` und optional `muster` (Dateimuster, etwa `"Sichttest_Composer_*.md"` — ohne es nimmt das Werkzeug jede `*.md` mit Schritten). Ein genannter Ordner, den es nicht gibt, wird still übergangen (frischer Klon ohne `.claude/`) | der Root des Projekts; Ablage `sichttest-logs/` im Root |
 | `gewichtung { hand[], git[] }` | Dateien des Nachtest-Indikators in **zwei Schichten**, die verschieden gerechnet werden: `hand` trägt je Bereich `weight`, `changed`, `note`, dazu `retest_steps` und `auto_weight`; `git` trägt `changed`, `commit`, `file` und hebt nur auf `auto_weight` (`TestProtokollWindow.cpp:1026–1083`, `:1148–1170`). Innerhalb einer Schicht gilt die Reihenfolge der Liste. Eine genannte Datei, die fehlt, wird still übergangen (`gitGewichtung.json` ist rechnerlokal). Format und Pflege bleiben bei der Anwendung | kein Indikator |
 | `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2); `tab` und `sql` gelten auch für die Links `tab://…` und `sql:…` im Text | das Feld wird gelesen und als Text gezeigt |
 
@@ -464,11 +467,19 @@ keine öffnet einen Dialog, keine braucht eine spätere Fertigmeldung. Die Namen
 **Wie sie gefunden wird**
 
 - Start über die Anwendung: `hallo` nennt den Pfad der Exe. Der Tester sucht von dort **aufwärts**
-  bis zur ersten `sichttest.projekt.json` (so findet er heute schon `.claude/handover`,
-  `main.cpp:80–94`). `sts_konfig.projekt_datei` setzt den Pfad ausdrücklich, falls die Exe
-  außerhalb des Repos liegt.
+  bis zum ersten Ordner `.sichttest`, der eine `sichttest.projekt.json` enthält (so findet er
+  heute schon `.claude/handover`). `sts_konfig.projekt_datei` setzt den Pfad ausdrücklich, falls
+  die Exe außerhalb des Repos liegt.
 - Start von Hand: `Sichttest <projektdatei>` oder `Sichttest <ordner>` — im zweiten Fall sucht er
   vom Ordner aufwärts. Ohne Projektdatei verhält er sich wie heute.
+- **Eine ausdrücklich genannte Projektdatei** (`Sichttest <projektdatei>`,
+  `sts_konfig.projekt_datei`) muss ebenfalls in einem Ordner `.sichttest` liegen; ihr Name ist
+  frei (im Aufruf von Hand muss er auf `.projekt.json` enden, daran erkennt der Tester sie). Root
+  ist der Ordner über `.sichttest`, wie bei der gesuchten Datei. Liegt sie woanders, lädt der
+  Tester sie nicht, öffnet keine Liste und meldet: „Die Projektdatei <pfad> liegt nicht in einem
+  Ordner .sichttest." (Patrik 2026-10-09)
+- Eine Projektdatei, die sich nicht laden lässt (falscher Ort, nicht lesbar, kein JSON), wird
+  gemeldet und nicht umgangen: der Tester zeigt dann auch die Listen des Ordners nicht.
 
 **Was die Datei zusammenführt:** ein Ort für Listen, Ablage, Gewichtung und Start; derselbe für
 einen von der Anwendung und einen von Hand gestarteten Tester; und die Namen der Aktionen bleiben
@@ -639,6 +650,7 @@ Mindestversion von CMake: 3.26.
 | E5 | **Kanal:** Der Tester lauscht. Die DLL verbindet sich bei `--testing` und startet den Tester, falls keiner läuft. Nach einem Neustart der Anwendung verbindet sie sich erneut, der Lauf geht beim selben Schritt weiter. | entschieden 2026-10-08 |
 | E6 | **Umzug:** Es zieht alles um außer der Test-DB, in den fünf Stufen von §14. Zuerst wird die Steuerung gebaut und LumiViz angebunden (§13, Schritte 1 bis 4), darin Stufe 1 (alle Felder des Comm Studio lesen, Ablage je Ordner). Danach folgen die Stufen 2 bis 5. `TestProtokollWindow` entfällt nach Stufe 4; bis dahin laufen beide Tester nebeneinander. | entschieden 2026-10-08 |
 | V1 | **Vorgabe:** Was der Tester über ein Projekt wissen muss (Pfade zu Listen, Ablage, Start), steht in Konfigurationsdateien und nicht im Quelltext der Projekte; die Schnittstelle soll für die heutigen Projekte passen und für künftige nicht gleich geändert werden müssen. Umgesetzt als Projektdatei (§7). | Patrik 2026-10-08 |
+| P2 | **Ort der Projektdatei:** Sie liegt in jedem Projekt unter `.sichttest/sichttest.projekt.json` im Root; die Pfade darin gelten ab dem Root (dem Ordner über `.sichttest`); der Tester sucht aufwärts bis zum ersten Ordner `.sichttest`, der die Datei enthält. Auch eine ausdrücklich genannte Datei muss in einem Ordner `.sichttest` liegen, ihr Name ist frei. Ohne `listen` gilt der Root. S und P ändern sich nicht (§7). | entschieden 2026-10-09, ab `v0.3.0` |
 | E7 | **Sichtbarkeit:** Das Repo `SichtTest_Helper` wird auf GitHub öffentlich angelegt, unter dem privaten Konto wie LumiViz. Der Bezug lädt das Release-Archiv ohne Anmeldung. Einrichten und Veröffentlichen: `GitHub_Einrichtung.md`. | entschieden 2026-10-08 |
 
 ## 12. Stellungnahme zu den Hinweisen von LV

@@ -104,6 +104,14 @@ namespace
         return {};
     }
 
+    // Der Ordner, den das Fenster zu einer genannten Projektdatei zeigt: ihr Root.
+    // Liegt sie nicht in `.sichttest`, ihr eigener Ordner — geladen wird sie dann nicht.
+    QString ordnerZuProjektDatei(const QString& datei)
+    {
+        const QString root = projektRoot(datei);
+        return root.isEmpty() ? QFileInfo(datei).absolutePath() : root;
+    }
+
     class Fenster : public QWidget
     {
     public:
@@ -128,7 +136,7 @@ namespace
                 {
                     // Sichttest <projektdatei>: deren Listen (Konzept §7).
                     m_projektGenannt = fi.absoluteFilePath();
-                    ordner = fi.absolutePath();
+                    ordner = ordnerZuProjektDatei(m_projektGenannt);
                 }
                 else { datei = fi.absoluteFilePath(); ordner = fi.absolutePath(); }
             }
@@ -557,21 +565,23 @@ namespace
 
             // Projektdatei (Konzept §7): ausdrücklich genannt, sonst vom Ordner aufwärts gesucht.
             // Mit ihr zählen ihre Listenordner und ihre Ablage, ohne sie der Ordner wie bisher.
-            if (!m_projektGenannt.isEmpty() && QFileInfo(m_projektGenannt).absolutePath() != ordner)
+            if (!m_projektGenannt.isEmpty() && ordnerZuProjektDatei(m_projektGenannt) != ordner)
                 m_projektGenannt.clear();
             const QString projektDatei = !m_projektGenannt.isEmpty() ? m_projektGenannt : findeProjektDatei(ordner);
             QString projektFehler;
             setzeProjekt(projektDatei.isEmpty() ? Projekt() : ladeProjekt(projektDatei, &projektFehler));
             const Projekt& pr = projekt();
 
+            // Eine Projektdatei, die sich nicht laden lässt, wird gemeldet und nicht umgangen.
             const QStringList pfade = pr.gueltig() ? protokolleDesProjekts(pr)
-                                    : ordner.isEmpty() ? QStringList() : findeProtokolle(ordner);
+                                    : ordner.isEmpty() || !projektFehler.isEmpty() ? QStringList()
+                                    : findeProtokolle(ordner);
             for (const QString& p : pfade)
             {
                 const Protokoll kurz = lade(p);
                 const Zaehler z = zaehleMitLauf(kurz);
                 m_combo->addItem(QStringLiteral("%1   ·   ○ %2  ✗ %3   (%4)")
-                                     .arg(pr.gueltig() ? QDir(pr.ordner).relativeFilePath(p) : QFileInfo(p).fileName())
+                                     .arg(pr.gueltig() ? QDir(pr.root).relativeFilePath(p) : QFileInfo(p).fileName())
                                      .arg(z.offen).arg(z.fail)
                                      .arg(kurz.titel), p);
             }
@@ -1171,7 +1181,7 @@ namespace
                                                                 : findeProjektDatei(QFileInfo(a.exe).absolutePath());
                 if (datei.isEmpty() || m_lauf.aktiv || QFileInfo(datei) == QFileInfo(projekt().pfad)) continue;
                 m_projektGenannt = QFileInfo(datei).absoluteFilePath();
-                setzeOrdner(QFileInfo(datei).absolutePath(), {});
+                setzeOrdner(ordnerZuProjektDatei(datei), {});
             }
         }
 
@@ -1274,9 +1284,9 @@ namespace
                                                           : QStringLiteral("läuft: %1 …")).arg(name.toHtmlEscaped()));
                 aktualisiereAktionen();
                 const quint64 token = m_lauf.token;
-                // basis: Ordner der Projektdatei, sonst der Liste — ein Angebot, aufgelöst wird in der Anwendung.
+                // basis: Root des Projekts, sonst der Ordner der Liste — ein Angebot, aufgelöst wird in der Anwendung.
                 m_steuerung.rufe(m_p.anwendung, name, a.value(QStringLiteral("mit")).toObject(),
-                                 projekt().gueltig() ? projekt().ordner : QFileInfo(m_p.pfad).absolutePath(), fristMs,
+                                 projekt().gueltig() ? projekt().root : QFileInfo(m_p.pfad).absolutePath(), fristMs,
                                  [this, token](const QString& status, const QString& text) {
                                      if (m_lauf.aktiv && m_lauf.token == token) aktionFertig(status, text);
                                  });
@@ -1596,7 +1606,7 @@ namespace
                       { QStringLiteral("sql"), QStringLiteral("echo sql") },
                       { QStringLiteral("test_db"), QStringLiteral("echo name seed") },
                       { QStringLiteral("test_db.ende"), QStringLiteral("echo") } } } };
-            const QString projektDatei = wurzel.filePath(QStringLiteral("sichttest.projekt.json"));
+            const QString projektDatei = wurzel.filePath(QStringLiteral(".sichttest/sichttest.projekt.json"));
             const QString studio = wurzel.filePath(QStringLiteral("listen/studio.testprotokoll.json"));
             const QString composer = wurzel.filePath(QStringLiteral("md/Composer_1.md"));
             bool geschrieben = schreibeDatei(projektDatei, QJsonDocument(projektJson).toJson());
@@ -1614,10 +1624,29 @@ namespace
                                                        "# Notiz\n\n- [ ] **N1 Eins:** passt nicht auf das Muster.\n");
             pruefe(geschrieben, QStringLiteral("Projekt für den Selbsttest angelegt"));
 
+            // Eine lose Projektdatei zählt nicht: weder gesucht noch ausdrücklich genannt.
+            const QDir lose(d.filePath(QStringLiteral("projekt-lose")));
+            QDir(lose.absolutePath()).removeRecursively();
+            const QString loseDatei = lose.filePath(QStringLiteral("sichttest.projekt.json"));
+            schreibeDatei(loseDatei, QJsonDocument(projektJson).toJson());
+            schreibeDatei(lose.filePath(QStringLiteral("Lose.md")), "# Lose\n\n- [ ] **L1 Eins:** Text.\n");
+            QString loseFehler;
+            const bool loseGeladen = ladeProjekt(loseDatei, &loseFehler).gueltig();
+            pruefe(findeProjektDatei(lose.absolutePath()).isEmpty() && !loseGeladen
+                   && loseFehler.contains(QLatin1String("nicht in einem Ordner .sichttest")),
+                   QStringLiteral("eine Projektdatei außerhalb von .sichttest wird nicht gefunden und nicht geladen"));
+            m_projektGenannt = loseDatei;
+            setzeOrdner(ordnerZuProjektDatei(loseDatei), {});
+            pruefe(!projekt().gueltig() && m_combo->count() == 0
+                   && m_kopfzeile->text().contains(QLatin1String("nicht in einem Ordner .sichttest")),
+                   QStringLiteral("ausdrücklich genannt und lose: der Tester meldet es und öffnet keine Liste"));
+            m_projektGenannt.clear();
+
             // Der Ordner einer Liste genügt: die Projektdatei wird aufwärts gefunden.
             setzeOrdner(wurzel.filePath(QStringLiteral("listen")), studio);
-            pruefe(projekt().gueltig() && QFileInfo(projekt().pfad) == QFileInfo(projektDatei),
-                   QStringLiteral("Projektdatei vom Listenordner aufwärts gefunden"));
+            pruefe(projekt().gueltig() && QFileInfo(projekt().pfad) == QFileInfo(projektDatei)
+                   && QFileInfo(projekt().root) == QFileInfo(wurzel.absolutePath()),
+                   QStringLiteral("Projektdatei vom Listenordner aufwärts in .sichttest gefunden; Root ist der Ordner darüber"));
             pruefe(m_combo->count() == 2 && m_combo->findData(studio) >= 0 && m_combo->findData(composer) >= 0,
                    QStringLiteral("Listen aus zwei Ordnern; das Muster gilt, ein fehlender Ordner wird übergangen (gezählt %1)")
                        .arg(m_combo->count()));
@@ -1696,7 +1725,7 @@ namespace
             // Meldet sich eine Anwendung mit einer Projektdatei im hallo, öffnet der Tester deren Listen.
             const QDir zwei(d.filePath(QStringLiteral("projekt2")));
             QDir(zwei.absolutePath()).removeRecursively();
-            const QString projektZwei = zwei.filePath(QStringLiteral("sichttest.projekt.json"));
+            const QString projektZwei = zwei.filePath(QStringLiteral(".sichttest/zwei.projekt.json"));
             const QJsonObject zweiJson{
                 { QStringLiteral("anwendung"), g },
                 { QStringLiteral("start"), QJsonObject{ { QStringLiteral("exe"), gegenprobe },
@@ -1707,7 +1736,7 @@ namespace
             starteGegenprobe(app, QStringLiteral("anwendung"), m_selbsttestKanal, projektZwei);
             pruefe(warteBis([&] { return m_steuerung.anwendung(g) != nullptr; }, 10000)
                    && QFileInfo(projekt().pfad) == QFileInfo(projektZwei) && m_p.pfad.endsWith(QLatin1String("Zwei.md")),
-                   QStringLiteral("hallo nennt eine Projektdatei: der Tester öffnet deren Listen (ohne listen: der Ordner der Datei)"));
+                   QStringLiteral("hallo nennt eine Projektdatei: der Tester öffnet deren Listen (Name frei; ohne listen: der Root)"));
             bool beendet = false;
             m_steuerung.rufe(g, QStringLiteral("ende"), {}, {}, 5000, [&beendet](const QString&, const QString&) { beendet = true; });
             warteBis([&] { return beendet && app.state() == QProcess::NotRunning; }, 5000);
