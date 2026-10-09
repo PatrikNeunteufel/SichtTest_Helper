@@ -26,8 +26,8 @@ in jedem `sichttest.pin`, also vor Schritt 3 festlegen).
 
 ### 2. Lokales Repo anlegen
 
-> **Stand 2026-10-08, 23:11:** dieser Schritt ist erledigt (Commit `70d4822`, lokale Identität
-> gesetzt). Offen sind der Tag `v0.1.0` und alles ab Schritt 3.
+> **Stand 2026-10-09:** dieser Schritt ist erledigt (Commit `b9e348d`, Tag `v0.1.0`, lokale
+> Identität gesetzt). Offen ist alles ab Schritt 3.
 
 ```bash
 git -C "C:/Users/patri/source/repos/Visuals_Project/cmake/SichtTest_Helper" init -b master
