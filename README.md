@@ -148,6 +148,11 @@ Verbindung verhält sich die Liste wie eine ohne Aktionen.
 - Die Aktionen eines gewöhnlichen Punkts laufen nur auf **▶ Herstellen**. **↺ Vorbereitung**
   wiederholt die Vorbereitung des Abschnitts.
 - `` `aktion: @A0` `` führt die Aktionen des Punkts `A0` an dieser Stelle aus.
+- Vor Aktionen, die Ungespeichertes verwerfen können, fragt das Werkzeug nach. Der Haken
+  **In dieser Sitzung nicht mehr fragen** stellt das ab, bis das Werkzeug beendet wird.
+- Hat die Anwendung das Werkzeug gestartet und wird sie beendet, bietet es unter der
+  Statuszeile **Tester beenden** an. Es schließt nie von selbst: die Anwendung kann auch nur
+  neu starten.
 - Scheitert eine Aktion oder kennt die Anwendung sie nicht, steht die Meldung rot am Punkt und
   darunter der Handgriff als Text. Der Lauf hält nie an, das Urteil bleibt beim Menschen.
 - In JSON: `"anwendung"`, `"vorbereitung": [ … ]` an der Wurzel, je Schritt `"aktionen": [ { "aktion":

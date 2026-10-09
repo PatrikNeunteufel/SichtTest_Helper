@@ -123,8 +123,9 @@ namespace
             baue();
         }
 
-        void starte(const QString& ziel)
+        void starte(const QString& ziel, bool vonAnwendungGestartet = false)
         {
+            m_vonAnwendungGestartet = vonAnwendungGestartet;
             QSettings einstellungen;
             QString ordner;
             QString datei;
@@ -453,7 +454,29 @@ namespace
             m_steuerungZeile->setStyleSheet(QStringLiteral("color:#8a8a8a;"));
             m_steuerungZeile->setTextInteractionFlags(Qt::TextSelectableByMouse);
             lay->addWidget(m_steuerungZeile);
+
+            // Nach dem geordneten Ende der Anwendung, die den Tester gestartet hat (§4): ein
+            // Hinweis mit Knopf. Er unterbricht nicht — die Anwendung kann auch nur neu starten.
+            m_endeHinweis = new QWidget(this);
+            auto* endeZeile = new QHBoxLayout(m_endeHinweis);
+            endeZeile->setContentsMargins(0, 0, 0, 0);
+            m_endeText = new QLabel(m_endeHinweis);
+            auto* endeBtn = new QPushButton(QStringLiteral("Tester beenden"), m_endeHinweis);
+            endeZeile->addWidget(m_endeText, 1);
+            endeZeile->addWidget(endeBtn);
+            m_endeHinweis->hide();
+            lay->addWidget(m_endeHinweis);
+            connect(endeBtn, &QPushButton::clicked, this, &QWidget::close);
+            m_steuerung.beiEnde = [this](const QString& anwendung, bool geordnet) {
+                // Eine Aktion mit beendet_anwendung hat das Ende gewollt: kein Hinweis.
+                const bool gewollt = m_endeDurchAktion;
+                m_endeDurchAktion = false;
+                if (!geordnet || gewollt || !m_vonAnwendungGestartet || (m_lauf.aktiv && m_lauf.wartetAufNeu)) return;
+                m_endeText->setText(QStringLiteral("Die Anwendung %1 wurde beendet.").arg(anwendung));
+                m_endeHinweis->show();
+            };
             m_steuerung.beiAenderung = [this]() {
+                if (!m_steuerung.anwendungen().isEmpty()) m_endeHinweis->hide();
                 bemerkeAnwendungen();
                 zeigeSteuerung();
                 aktualisiereAktionen();
@@ -1105,13 +1128,9 @@ namespace
                 const QString name = v.toObject().value(QStringLiteral("aktion")).toString();
                 if (schalterVon(name).contains(QLatin1String("fragt_nach"))) heikel.append(name);
             }
-            if (!heikel.isEmpty() && !m_ohneRueckfrage
-                && QMessageBox::question(this, QStringLiteral("Sichttest"),
-                       QStringLiteral("Gleich verändert %1 seinen Zustand — Ungespeichertes kann verloren gehen:\n\n%2\n\n"
-                                      "Ausführen?").arg(anwendungsName(), heikel.join(QStringLiteral(", "))))
-                   != QMessageBox::Yes)
-                return;
+            if (!heikel.isEmpty() && !m_ohneRueckfrage && !frageVorHeiklem(heikel)) return;
 
+            m_endeDurchAktion = false;
             m_lauf = {};
             m_lauf.aktiv = true;
             m_lauf.idx = logIdx;
@@ -1119,6 +1138,21 @@ namespace
             m_lauf.token = ++m_token;
             m_lauf.fortsetzen = logIdx >= 0 && istVorbereitung(schritt(logIdx)) && hatBewertung();
             naechsteAktion();
+        }
+
+        // Rückfrage vor Aktionen mit fragt_nach. Der Haken gilt, bis der Tester endet (§3).
+        bool frageVorHeiklem(const QStringList& heikel)
+        {
+            if (m_nichtMehrFragen) return true;
+            QMessageBox box(QMessageBox::Question, QStringLiteral("Sichttest"),
+                            QStringLiteral("Gleich verändert %1 seinen Zustand — Ungespeichertes kann verloren gehen:\n\n%2\n\n"
+                                           "Ausführen?").arg(anwendungsName(), heikel.join(QStringLiteral(", "))),
+                            QMessageBox::Yes | QMessageBox::No, this);
+            auto* haken = new QCheckBox(QStringLiteral("In dieser Sitzung nicht mehr fragen"), &box);
+            box.setCheckBox(haken);
+            if (box.exec() != QMessageBox::Yes) return false;
+            m_nichtMehrFragen = haken->isChecked();
+            return true;
         }
 
         // Nachbereitung der Liste (§6.2): am Ende des Laufs und beim Schließen angeboten,
@@ -1305,6 +1339,7 @@ namespace
                 beendeLauf(text.isEmpty() ? status : text);
                 return;
             }
+            if (m_lauf.beendet) m_endeDurchAktion = true;
             ++m_lauf.pos;
             if (m_lauf.beendet && m_lauf.pos < m_lauf.liste.size())
             {
@@ -1581,6 +1616,7 @@ namespace
             QString gegenprobe, dll;
             if (!gegenprobePfade(gegenprobe, dll)) { pruefe(false, QStringLiteral("Gegenprobe ist gebaut")); return; }
             const QString g = QStringLiteral("Gegenprobe");
+            m_vonAnwendungGestartet = true;   // wie nach --steuerung; zählt für den Hinweis beim Beenden (§4)
             const QDir wurzel(d.filePath(QStringLiteral("projekt")));
             QDir(wurzel.absolutePath()).removeRecursively();
 
@@ -1721,6 +1757,8 @@ namespace
             pruefe(warteBis([&] { return !m_lauf.aktiv && m_steuerung.anwendung(g) == nullptr; }, 10000)
                    && status(ausgeloest(QStringLiteral("s-02")), 0) == QLatin1String("ok"),
                    QStringLiteral("restart: die abgebildete Aktion beendet die Anwendung, ohne dass der Tester einen Fehler meldet"));
+            pruefe(m_endeHinweis->isHidden(),
+                   QStringLiteral("Beenden: nach einer Aktion mit beendet_anwendung bietet der Tester das Beenden nicht an"));
 
             // Meldet sich eine Anwendung mit einer Projektdatei im hallo, öffnet der Tester deren Listen.
             const QDir zwei(d.filePath(QStringLiteral("projekt2")));
@@ -1744,6 +1782,74 @@ namespace
             app.waitForFinished(2000);
             warteBis([&] { return m_steuerung.anwendung(g) == nullptr; }, 2000);
 
+            // Beenden (§4): die Anwendung hat den Tester gestartet und sich eben geordnet verabschiedet
+            // (»ende« kam hier nicht aus einer Liste, zählt also wie ein Beenden von Hand).
+            const auto endeKnoepfe = m_endeHinweis->findChildren<QPushButton*>();
+            pruefe(!m_endeHinweis->isHidden() && m_endeText->text().contains(g)
+                   && endeKnoepfe.size() == 1 && endeKnoepfe.first()->text() == QStringLiteral("Tester beenden"),
+                   QStringLiteral("Beenden: nach dem geordneten Ende der Anwendung steht der Hinweis mit dem Knopf »Tester beenden«"));
+            {
+                QProcess wieder;
+                starteGegenprobe(wieder, QStringLiteral("anwendung"), m_selbsttestKanal, projektZwei);
+                pruefe(warteBis([&] { return m_steuerung.anwendung(g) != nullptr; }, 10000) && m_endeHinweis->isHidden(),
+                       QStringLiteral("Beenden: verbindet sich die Anwendung wieder, verschwindet der Hinweis"));
+                wieder.kill();
+                wieder.waitForFinished(2000);
+                pruefe(warteBis([&] { return m_steuerung.anwendung(g) == nullptr; }, 5000) && m_endeHinweis->isHidden(),
+                       QStringLiteral("Beenden: nach einem Abriss (kein tschuess) kein Hinweis"));
+            }
+            {
+                m_vonAnwendungGestartet = false;
+                QProcess vonHand;
+                starteGegenprobe(vonHand, QStringLiteral("anwendung"), m_selbsttestKanal, projektZwei);
+                warteBis([&] { return m_steuerung.anwendung(g) != nullptr; }, 10000);
+                bool fertig = false;
+                m_steuerung.rufe(g, QStringLiteral("ende"), {}, {}, 5000, [&fertig](const QString&, const QString&) { fertig = true; });
+                warteBis([&] { return fertig && vonHand.state() == QProcess::NotRunning; }, 5000);
+                if (vonHand.state() != QProcess::NotRunning) vonHand.kill();
+                vonHand.waitForFinished(2000);
+                pruefe(warteBis([&] { return m_steuerung.anwendung(g) == nullptr; }, 2000) && m_endeHinweis->isHidden(),
+                       QStringLiteral("Beenden: ein von Hand gestarteter Tester bietet das Beenden nicht an"));
+            }
+
+            // Rückfrage vor fragt_nach (§3): der Haken gilt, bis der Tester endet.
+            {
+                bool gesehen = false;
+                auto antworte = [&](bool haken) {
+                    QTimer::singleShot(150, this, [&gesehen, haken]() {
+                        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+                        if (!box) return;
+                        gesehen = box->checkBox()
+                                  && box->checkBox()->text() == QStringLiteral("In dieser Sitzung nicht mehr fragen");
+                        if (box->checkBox()) box->checkBox()->setChecked(haken);
+                        box->button(QMessageBox::Yes)->click();
+                    });
+                };
+                const QStringList heikel{ QStringLiteral("tabs_schliessen") };
+                antworte(false);
+                pruefe(frageVorHeiklem(heikel) && gesehen && !m_nichtMehrFragen,
+                       QStringLiteral("Rückfrage: sie trägt den Haken »In dieser Sitzung nicht mehr fragen«; ohne Haken bleibt sie"));
+                gesehen = false;
+                antworte(true);
+                pruefe(frageVorHeiklem(heikel) && gesehen && m_nichtMehrFragen,
+                       QStringLiteral("Rückfrage: Ja mit Haken merkt sich der Tester"));
+                // Käme jetzt noch ein Dialog, bliebe der Aufruf hängen — die Wache schlösse ihn mit Nein.
+                bool kamDoch = false;
+                QTimer wache;
+                wache.setSingleShot(true);
+                connect(&wache, &QTimer::timeout, this, [&kamDoch]() {
+                    if (auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget()))
+                    {
+                        kamDoch = true;
+                        box->button(QMessageBox::No)->click();
+                    }
+                });
+                wache.start(150);
+                pruefe(frageVorHeiklem(heikel) && !kamDoch,
+                       QStringLiteral("Rückfrage: mit gesetztem Haken fragt der Tester in dieser Sitzung nicht mehr"));
+                m_nichtMehrFragen = false;
+            }
+
             // Gestartet, aber kein hallo: eigene Meldung (§6.3). Hier endet die Exe sofort.
             m_startFristMs = 300;
             m_gemeldeteExe.clear();
@@ -1754,6 +1860,7 @@ namespace
             setzeProjekt({});
             m_steuerung.beiAenderung = nullptr;
             m_steuerung.beiMeldung = nullptr;
+            m_steuerung.beiEnde = nullptr;
         }
 
         static constexpr int kNachbereitung = -2;   // Lauf.idx: die Aktionen gehören zur Liste, nicht zu einem Punkt
@@ -1764,6 +1871,11 @@ namespace
         bool      m_nachbereitet = false;     // in diesem Lauf schon angeboten
         bool      m_schliesstDanach = false;
         QString   m_projektGenannt;           // ausdrücklich genannte Projektdatei (Aufruf oder hallo)
+        bool      m_nichtMehrFragen = false;  // Haken der Rückfrage vor fragt_nach; gilt, bis der Tester endet
+        bool      m_vonAnwendungGestartet = false;   // Aufruf mit --steuerung
+        bool      m_endeDurchAktion = false;  // eine Aktion mit beendet_anwendung ist gelaufen: das Ende ist gewollt
+        QWidget*  m_endeHinweis = nullptr;
+        QLabel*   m_endeText = nullptr;
         QHash<QString, QString> m_gemeldeteExe;   // Anwendung → Exe aus ihrem letzten hallo
         QSet<qint64> m_gesehen;               // Pids, deren Verbindung schon ausgewertet ist
         QTimer    m_startFrist;
@@ -1842,7 +1954,7 @@ int main(int argc, char** argv)
     // --steuerung: so startet die DLL den Tester, wenn keiner lauscht (Konzept §4).
     // Er lauscht ohnehin; das Argument ist kein Ziel.
     QStringList args = QCoreApplication::arguments();
-    args.removeAll(QStringLiteral("--steuerung"));
+    const bool vonAnwendungGestartet = args.removeAll(QStringLiteral("--steuerung")) > 0;
     if (args.size() >= 3 && args.at(1) == QLatin1String("--pruefe"))
         return pruefe(args.at(2));
 
@@ -1865,7 +1977,7 @@ int main(int argc, char** argv)
     }
 
     Fenster fenster;
-    fenster.starte(args.size() >= 2 ? args.at(1) : QString());
+    fenster.starte(args.size() >= 2 ? args.at(1) : QString(), vonAnwendungGestartet);
     fenster.show();
     return QApplication::exec();
 }

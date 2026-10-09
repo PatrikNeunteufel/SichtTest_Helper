@@ -67,6 +67,8 @@ namespace sichttest
 
         std::function<void()> beiAenderung;
         std::function<void(const QString& anwendung, const QString& text)> beiMeldung;
+        // Eine begrüßte Anwendung ist weg. geordnet: sie hat sich mit tschuess verabschiedet.
+        std::function<void(const QString& anwendung, bool geordnet)> beiEnde;
 
     private:
         struct Auftrag
@@ -80,6 +82,7 @@ namespace sichttest
         {
             Anwendung app;
             bool begruesst = false;
+            bool verabschiedet = false;   // tschuess ist angekommen
             bool laeuft = false;       // der vorderste Auftrag ist geschickt
             QList<Auftrag> reihe;
             QTimer* frist = nullptr;

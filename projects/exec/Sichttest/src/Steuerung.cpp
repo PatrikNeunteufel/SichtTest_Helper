@@ -149,7 +149,12 @@ namespace sichttest
         {
             if (beiMeldung) beiMeldung(v.app.name, o.value(QStringLiteral("text")).toString());
         }
-        // tschuess: das Ende der Verbindung folgt von selbst. Unbekanntes wird überlesen (§5).
+        else if (art == QLatin1String("tschuess"))
+        {
+            // Das Ende der Verbindung folgt von selbst; gemerkt wird nur, dass es geordnet war.
+            v.verabschiedet = true;
+        }
+        // Unbekanntes wird überlesen (§5).
     }
 
     void Steuerung::begruesse(QLocalSocket* s, const QJsonObject& hallo)
@@ -201,6 +206,7 @@ namespace sichttest
         delete v.frist;
         for (const Auftrag& a : std::as_const(v.reihe))
             if (a.fertig) a.fertig(QStringLiteral("getrennt"), QStringLiteral("Verbindung zur Anwendung beendet"));
+        if (v.begruesst && beiEnde) beiEnde(v.app.name, v.verabschiedet);
         geaendert();
     }
 

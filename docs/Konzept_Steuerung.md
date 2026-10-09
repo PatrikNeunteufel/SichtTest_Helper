@@ -5,7 +5,8 @@
 > Schritte 1 bis 3 aus §13** (bei SH und CC): DLL mit S 1.0, Protokoll P 1, die drei Köpfe,
 > Aktionen aus Listen, Projektdatei, Stufe 1 aus §14, CMakeCraft v0.10.0, Paket und Release
 > `v0.2.0`; seit `v0.3.0` liegt die Projektdatei unter `.sichttest/` (P2, §7), seit `v0.3.1` nennen die Köpfe
-> die Fassung der geladenen DLL (§8). Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
+> die Fassung der geladenen DLL (§8), seit `v0.3.2` hat die Rückfrage einen Haken (§3) und der
+> Tester bietet nach dem Ende der Anwendung das Beenden an (§4). Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
 > Gezählt wird hier nach §13; im Sync heißen dieselben Abschnitte nach der Freigabe „3 und 4"
 > (CMakeCraft und Paket), „5" (LumiViz) und „6" (Comm Studio) ·
 > **Gehört:** SichtTest_Helper (Sync-Prefix SH) · **Verbindliche Spezifikation** seit 2026-10-09;
@@ -140,7 +141,7 @@ braucht damit keine Änderung an der Schnittstelle, und ein neuer Listenordner k
 
 | Schalter | Bedeutung | Was der Tester tut |
 |---|---|---|
-| `STS_FRAGT_NACH` | verändert Zustand, der verloren gehen kann (Tabs schließen, Ungespeichertes verwerfen), fragt aber **nicht selbst** | fragt vorher, einmal je Vorbereitung — auch beim Fortsetzen |
+| `STS_FRAGT_NACH` | verändert Zustand, der verloren gehen kann (Tabs schließen, Ungespeichertes verwerfen), fragt aber **nicht selbst** | fragt vorher, einmal je Vorbereitung — auch beim Fortsetzen. Die Rückfrage trägt den Haken „In dieser Sitzung nicht mehr fragen“: gesetzt und mit Ja beantwortet, fragt der Tester nicht mehr, bis er beendet wird; er gilt für alle Anwendungen und Listen (ab `v0.3.2`, Patrik 2026-10-09) |
 | `STS_NUR_ERSTLAUF` | räumt ab, statt herzustellen; gehört nur an den Anfang eines neuen Laufs | lässt die Aktion beim **Fortsetzen** eines Laufs aus (§6.4) |
 | `STS_WARTET_AUF_MENSCH` | die Aktion fragt **in der Anwendung** nach (Dialoge), ihre Dauer hängt am Menschen | keine Frist; zeigt „wartet auf die Anwendung" mit **Abbrechen** (der Tester wartet dann nicht weiter, eine späte Antwort wird verworfen) |
 | `STS_BEENDET_ANWENDUNG` | nach der Antwort endet die Anwendung oder startet neu | wertet das Ende der Verbindung nicht als Fehler, zeigt „Anwendung startet neu" und wartet auf die neue Verbindung |
@@ -201,6 +202,13 @@ Bedingung eines Schritts. Alles drei lässt sich als kleine Fassung (neue Aufruf
   sich wieder, der Lauf geht beim selben Schritt weiter. Das ersetzt `--resume-log=<pfad>` des
   Comm Studio (`UART/gui/Comm_Studio/MainWindow.cpp:2323–2330`), ohne dass der Tester etwas
   über den Neustart wissen muss.
+- **Beenden (ab `v0.3.2`, Patrik 2026-10-09):** Verabschiedet sich die Anwendung geordnet
+  (`tschuess`) und hat sie den Tester gestartet (`--steuerung`), zeigt der Tester unter der
+  Statuszeile „Die Anwendung … wurde beendet“ mit dem Knopf **Tester beenden**. Er schließt nicht
+  von selbst und fragt nicht modal; verbindet sich die Anwendung wieder, verschwindet der
+  Hinweis. Kein Hinweis bei einem Abriss, nach einer Aktion mit `STS_BEENDET_ANWENDUNG` und bei
+  einem von Hand gestarteten Tester. Beendet der Mensch den Tester, läuft die Anwendung weiter;
+  dass sie darauf reagiert, ist nicht beschlossen (bräuchte S 1.1).
 - Mehrere Anwendungen können zugleich verbunden sein; eine Liste nennt ihre Anwendung (§6), der
   Tester wählt die Verbindung nach dem Namen aus `sts_konfig.anwendung`.
 
