@@ -208,7 +208,13 @@ für den Ordner der Liste nennt:
 
 Geschrieben wird nach jeder Bewertung, nach jedem Screenshot, beim Wechsel des
 Schritts und beim Schließen. Beim nächsten Start wird der jüngste Lauf der
-Liste fortgesetzt; **▶ Neuer Lauf** beginnt frisch.
+Liste fortgesetzt, solange er offene Schritte hat. Ist er abgeschlossen, beginnt
+ein neuer Lauf, und die Kopfzeile sagt es; der abgeschlossene bleibt, wie er ist.
+**▶ Neuer Lauf** beginnt jederzeit frisch.
+
+`build` nennt die Exe, gegen die der Lauf lief, und ihren Zeitstempel (ISO): die
+der verbundenen Anwendung; ohne Verbindung die aus der Liste oder dem Projekt.
+Ein fortgesetzter Lauf ohne Verbindung behält, was sein Testlog schon nennt.
 
 ## Bedienung
 

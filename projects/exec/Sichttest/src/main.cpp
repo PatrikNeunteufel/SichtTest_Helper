@@ -214,6 +214,13 @@ namespace
 
             pruefe(schritt(3).value(QStringLiteral("id")).toString() == QLatin1String("P4"),
                    QStringLiteral("Punkt ohne Kennung heißt P4"));
+
+            // Wiederaufnahme: neu einlesen setzt denselben Lauf fort, solange ein Schritt offen ist.
+            const QString lauf = m_logPfad;
+            setzeOrdner(d.absolutePath(), liste);
+            pruefe(m_logPfad == lauf && m_idx == 3
+                   && schritt(2).value(QStringLiteral("remark")).toString() == QLatin1String("flackert beim Wechsel"),
+                   QStringLiteral("Neu-Einlesen setzt den Lauf mit offenem Schritt fort, Bemerkung ist da"));
             klicke(QStringLiteral("↷ Überspringen"));
             pruefe(schritt(3).value(QStringLiteral("result")).toString() == QLatin1String("skip"),
                    QStringLiteral("Überspringen gesetzt"));
@@ -234,16 +241,24 @@ namespace
                    && report.contains(bildName),
                    QStringLiteral("Report nennt den Fail mit Bemerkung und Bild"));
 
-            // Wiederaufnahme: neu einlesen setzt denselben Lauf fort.
-            const QString lauf = m_logPfad;
+            // Ein abgeschlossener Lauf wird nicht fortgesetzt: es beginnt ein neuer, der alte bleibt.
+            auto bytes = [](const QString& pfad) {
+                QFile f(pfad);
+                return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+            };
+            const QByteArray fertig = bytes(lauf);
             setzeOrdner(d.absolutePath(), liste);
-            pruefe(m_logPfad == lauf
-                   && schritt(2).value(QStringLiteral("remark")).toString() == QLatin1String("flackert beim Wechsel"),
-                   QStringLiteral("Neu-Einlesen setzt den Lauf fort, Bemerkung ist da"));
+            pruefe(m_logPfad != lauf && !QFileInfo::exists(m_logPfad)
+                   && schritt(2).value(QStringLiteral("result")).toString() == QLatin1String("open")
+                   && m_kopfzeile->text().contains(QStringLiteral("ist abgeschlossen")),
+                   QStringLiteral("nach dem letzten Urteil beginnt beim Neu-Einlesen ein neuer Lauf, die Kopfzeile sagt es"));
+            pruefe(!fertig.isEmpty() && bytes(lauf) == fertig,
+                   QStringLiteral("der abgeschlossene Lauf ist unverändert"));
             QFile original(liste);
             pruefe(original.open(QIODevice::ReadOnly) && original.readAll().contains("- [ ] **A1 Eins:**"),
                    QStringLiteral("die Liste selbst ist unverändert"));
 
+            selbsttestBuild(d, pruefe, klicke);
             selbsttestListen(d, pruefe);
 #ifdef Q_OS_WIN
             fehler += selbsttestSteuerung(aus);
@@ -479,6 +494,7 @@ namespace
                 if (!m_steuerung.anwendungen().isEmpty()) m_endeHinweis->hide();
                 bemerkeAnwendungen();
                 merkeSteuerung();
+                merkeBuild();
                 zeigeSteuerung();
                 aktualisiereAktionen();
                 weiterNachNeustart();
@@ -656,19 +672,28 @@ namespace
                 QMessageBox::warning(this, QStringLiteral("Sichttest"), fehler);
                 return;
             }
-            const QString lauf = neuerLauf ? QString() : neuesterLauf(pfad);
+            // Fortgesetzt wird der jüngste Lauf nur, solange er offene Schritte hat; ein
+            // abgeschlossener bleibt, wie er ist, und es beginnt ein neuer.
+            const QString juengster = neuerLauf ? QString() : neuesterLauf(pfad);
+            const QJsonObject log = juengster.isEmpty() ? QJsonObject() : leseJson(juengster);
+            const bool vorigerFertig = !juengster.isEmpty() && istAbgeschlossen(log);
+            const QString lauf = vorigerFertig ? QString() : juengster;
             if (!lauf.isEmpty())
             {
-                const QJsonObject log = leseJson(lauf);
                 uebernimmLauf(p, log);
                 m_logPfad = lauf;
                 m_gestartet = log.value(QStringLiteral("started")).toString();
             }
             else
             {
-                m_logPfad = QStringLiteral("%1/%2_%3.testlog.json")
-                    .arg(logOrdner(pfad), logStamm(pfad),
-                         QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
+                // Der Name trägt die Sekunde; liegt dort schon ein Lauf, nimmt der neue die nächste freie.
+                QDateTime zeit = QDateTime::currentDateTime();
+                do
+                {
+                    m_logPfad = QStringLiteral("%1/%2_%3.testlog.json")
+                        .arg(logOrdner(pfad), logStamm(pfad), zeit.toString(QStringLiteral("yyyyMMdd-HHmmss")));
+                    zeit = zeit.addSecs(1);
+                } while (QFileInfo::exists(m_logPfad));
                 m_gestartet = QDateTime::currentDateTime().toString(Qt::ISODate);
             }
             // Nennt die Liste keine Anwendung und keine Exe, gelten die des Projekts.
@@ -682,6 +707,7 @@ namespace
             m_exeDatei = findeExeDatei(m_p.exe, pfad);
             m_exeZeit = m_exeDatei.isEmpty() ? QString()
                 : QFileInfo(m_exeDatei).lastModified().toString(QStringLiteral("dd.MM.yyyy HH:mm"));
+            merkeBuild();
             m_exeBtn->setVisible(!m_exeDatei.isEmpty());
             m_exeBtn->setToolTip(QDir::toNativeSeparators(m_exeDatei)
                                  + (pr.startArgumente.isEmpty() ? QString()
@@ -695,8 +721,10 @@ namespace
                 kopf += m_exeDatei.isEmpty()
                     ? QStringLiteral(" · Exe nicht gefunden: %1").arg(m_p.exe.toHtmlEscaped())
                     : QStringLiteral(" · Exe vom %1").arg(m_exeZeit);
-            kopf += lauf.isEmpty() ? QStringLiteral(" · neuer Lauf")
-                                   : QStringLiteral(" · Lauf vom %1 fortgesetzt").arg(m_gestartet);
+            kopf += !lauf.isEmpty() ? QStringLiteral(" · Lauf vom %1 fortgesetzt").arg(m_gestartet)
+                  : vorigerFertig ? QStringLiteral(" · neuer Lauf (der vorige vom %1 ist abgeschlossen)")
+                                        .arg(log.value(QStringLiteral("started")).toString())
+                                  : QStringLiteral(" · neuer Lauf");
             for (const QString& h : std::as_const(m_p.hinweise))
                 kopf += QStringLiteral("<br><span style='color:#d64545;'>⚠ %1</span>").arg(h.toHtmlEscaped());
             m_kopfzeile->setText(kopf);
@@ -989,7 +1017,7 @@ namespace
             {
                 QSaveFile f(m_logPfad);
                 gut = f.open(QIODevice::WriteOnly)
-                      && f.write(QJsonDocument(alsLog(m_p, m_gestartet, m_exeZeit)).toJson()) >= 0
+                      && f.write(QJsonDocument(alsLog(m_p, m_gestartet)).toJson()) >= 0
                       && f.commit();
             }
             {
@@ -1062,6 +1090,25 @@ namespace
             {
                 m_p.steuerung.insert(QStringLiteral("zustand"), QStringLiteral("getrennt"));
             }
+        }
+
+        // Testlog, Block build: gegen welche Exe der Lauf lief. Die verbundene Anwendung nennt
+        // ihre Exe selbst (hallo); ohne Verbindung bleibt beim Fortsetzen stehen, was das
+        // Testlog schon trägt, und nur ein neuer Lauf nimmt die Exe aus Liste oder Projekt.
+        void merkeBuild()
+        {
+            if (m_p.pfad.isEmpty()) return;
+            auto alsBuild = [](const QString& exe, const QString& datei) {
+                return QJsonObject{
+                    { QStringLiteral("exe"), exe },
+                    { QStringLiteral("exe_timestamp"),
+                      datei.isEmpty() ? QString() : QFileInfo(datei).lastModified().toString(Qt::ISODate) } };
+            };
+            const Steuerung::Anwendung* a = m_steuerung.anwendung(m_p.anwendung);
+            if (a && !a->exe.isEmpty())
+                m_p.build = alsBuild(a->exe, QFileInfo::exists(a->exe) ? a->exe : QString());
+            else if (m_p.build.value(QStringLiteral("exe")).toString().isEmpty())
+                m_p.build = alsBuild(m_p.exe, m_exeDatei);
         }
 
         QString anwendungsName() const
@@ -1473,6 +1520,39 @@ namespace
                 "- [ ] **G7 Ohne:** Ein Punkt wie bisher.\n");
         }
 
+        // Block build im Testlog, ohne Verbindung: Stempel als ISO; ein fortgesetzter Lauf
+        // behält, was sein Testlog nennt (etwa die Debug-Exe eines Laufs aus dem Comm Studio).
+        void selbsttestBuild(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
+        {
+            const QString eigene = QDir::fromNativeSeparators(QCoreApplication::applicationFilePath());
+            const QString liste = d.filePath(QStringLiteral("Build.md"));
+            {
+                QFile f(liste);
+                if (!f.open(QIODevice::WriteOnly)) { pruefe(false, QStringLiteral("Build.md schreiben")); return; }
+                f.write(QStringLiteral("# Build\n\n**Exe:** `%1`\n\n- [ ] **A1 Eins:** Text.\n- [ ] **A2 Zwei:** Text.\n")
+                            .arg(eigene).toUtf8());
+            }
+            oeffne(liste, true);
+            klicke(QStringLiteral("✓ Pass"));
+            QJsonObject log = leseJson(m_logPfad);
+            const QString stempel = log.value(QStringLiteral("build")).toObject().value(QStringLiteral("exe_timestamp")).toString();
+            pruefe(log.value(QStringLiteral("build")).toObject().value(QStringLiteral("exe")).toString() == eigene
+                   && stempel.contains(QLatin1Char('T')) && QDateTime::fromString(stempel, Qt::ISODate).isValid(),
+                   QStringLiteral("build im Testlog: Exe der Liste, Stempel als ISO (%1)").arg(stempel));
+
+            const QJsonObject fremd{ { QStringLiteral("exe"), QStringLiteral("C:/fremd/Debug/app.exe") },
+                                     { QStringLiteral("exe_timestamp"), QStringLiteral("2026-09-01T14:14:08") } };
+            log.insert(QStringLiteral("build"), fremd);
+            const QString lauf = m_logPfad;
+            pruefe(schreibeDatei(lauf, QJsonDocument(log).toJson()), QStringLiteral("Testlog mit fremdem build ablegen"));
+            oeffne(liste, false);
+            klicke(QStringLiteral("✓ Pass"));
+            log = leseJson(lauf);
+            pruefe(m_logPfad == lauf && log.value(QStringLiteral("build")).toObject() == fremd
+                   && log.value(QStringLiteral("summary")).toObject().value(QStringLiteral("open")).toInt() == 0,
+                   QStringLiteral("fortgesetzter Lauf ohne Verbindung: build bleibt, wie das Testlog ihn nennt"));
+        }
+
         // Der Leser allein, ohne Verbindung.
         void selbsttestListen(const QDir& d, const Pruefe& pruefe)
         {
@@ -1611,6 +1691,13 @@ namespace
                    && st.value(QStringLiteral("p")).toInt() == 1 && st.value(QStringLiteral("s")).toString() == QLatin1String("1.0")
                    && st.value(QStringLiteral("zustand")).toString() == QLatin1String("verbunden"),
                    QStringLiteral("das Testlog trägt den Block steuerung: Anwendung, Version, Produkt, P, S, Zustand"));
+            const QJsonObject build = aufPlatte.value(QStringLiteral("build")).toObject();
+            const Steuerung::Anwendung* verbunden = m_steuerung.anwendung(g);
+            pruefe(verbunden && !verbunden->exe.isEmpty()
+                   && build.value(QStringLiteral("exe")).toString() == verbunden->exe
+                   && QDateTime::fromString(build.value(QStringLiteral("exe_timestamp")).toString(), Qt::ISODate).isValid(),
+                   QStringLiteral("build im Testlog nennt die Exe der verbundenen Anwendung aus hallo (%1)")
+                       .arg(build.value(QStringLiteral("exe")).toString()));
 
             // Neustart: die erste Aktion beendet die Anwendung, die zweite läuft nach dem Wiederverbinden.
             zeige(findeSchritt(QStringLiteral("G6")));

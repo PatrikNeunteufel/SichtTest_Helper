@@ -490,6 +490,7 @@ namespace sichttest
         }
         protokoll.nachbereitungLog = log.value(QStringLiteral("teardown_actions")).toArray();
         protokoll.steuerung = log.value(QStringLiteral("steuerung")).toObject();
+        protokoll.build = log.value(QStringLiteral("build")).toObject();
         const QJsonValue aktiv = log.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("active"));
         if (!aktiv.isUndefined() && !protokoll.testDb.isEmpty())
             protokoll.testDb.insert(QStringLiteral("active"), aktiv);
@@ -521,13 +522,13 @@ namespace sichttest
         return QStringLiteral("○");
     }
 
-    QJsonObject alsLog(const Protokoll& protokoll, const QString& gestartet,
-                       const QString& exeZeit)
+    QJsonObject alsLog(const Protokoll& protokoll, const QString& gestartet)
     {
         const Zaehler z = zaehle(protokoll.schritte);
         QJsonObject build;
-        build.insert(QStringLiteral("exe"), protokoll.exe);
-        build.insert(QStringLiteral("exe_timestamp"), exeZeit);
+        build.insert(QStringLiteral("exe"), protokoll.build.value(QStringLiteral("exe")).toString());
+        build.insert(QStringLiteral("exe_timestamp"),
+                     protokoll.build.value(QStringLiteral("exe_timestamp")).toString());
         QJsonObject summe;
         summe.insert(QStringLiteral("pass"), z.pass);
         summe.insert(QStringLiteral("pass_remark"), z.passBefund);
@@ -641,6 +642,11 @@ namespace sichttest
             { logStamm(protokollPfad) + QStringLiteral("_*.testlog.json") },
             QDir::Files, QDir::Name | QDir::Reversed);
         return logs.isEmpty() ? QString() : ordner.filePath(logs.first());
+    }
+
+    bool istAbgeschlossen(const QJsonObject& log)
+    {
+        return log.value(QStringLiteral("summary")).toObject().value(QStringLiteral("open")).toInt() == 0;
     }
 
     QStringList findeProtokolle(const QString& ordner, const QString& muster)

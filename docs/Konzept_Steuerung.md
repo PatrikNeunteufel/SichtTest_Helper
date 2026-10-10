@@ -7,7 +7,8 @@
 > `v0.2.0`; seit `v0.3.0` liegt die Projektdatei unter `.sichttest/` (P2, §7), seit `v0.3.1` nennen die Köpfe
 > die Fassung der geladenen DLL (§8), seit `v0.3.2` hat die Rückfrage einen Haken (§3) und der
 > Tester bietet nach dem Ende der Anwendung das Beenden an (§4), seit `v0.3.3` trägt das Testlog
-> den Block `steuerung` (§5). Die Festlegungen, die beim
+> den Block `steuerung` (§5), seit `v0.3.4` wird ein abgeschlossener Lauf nicht mehr fortgesetzt,
+> und `build` bleibt beim Fortsetzen erhalten (§6.4). Die Festlegungen, die beim
 > Bauen fielen (im Sync SH-15), stehen seit dem 2026-10-09 in §3, §4, §6 und §7, jeweils mit
 > „beim Bauen festgelegt" gekennzeichnet. Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
 > Gezählt wird hier nach §13; im Sync heißen dieselben Abschnitte nach der Freigabe „3 und 4"
@@ -105,7 +106,7 @@ typedef struct {
 /* Fassungen der DLL, ohne Sitzung abfragbar. */
 void       sts_fassung(uint16_t* s_major, uint16_t* s_minor,
                        uint16_t* p_major_min, uint16_t* p_major_max,
-                       const char** produkt);                 /* "0.3.3" = Tag des Repos ohne v */
+                       const char** produkt);                 /* "0.3.4" = Tag des Repos ohne v */
 
 /* Sitzung anlegen; prüft S (§5). Öffnet noch nichts. Scheitert es, gibt es keine Sitzung;
    den Grund nennt dann sts_letzter_fehler(NULL). */
@@ -283,7 +284,7 @@ erscheint als Text, eine verspätete Antwort wird verworfen.
 |---|---|---|---|
 | **P** — Protokoll Tester ↔ DLL, `groß.klein` | in Tester und DLL einkompiliert | beim Verbinden (`hallo`) | Tester |
 | **S** — Schnittstelle DLL ↔ Anwendung, `groß.klein` | `STS_S_MAJOR/MINOR` im Kopf, also in der Anwendung; in der DLL; die große Nummer zusätzlich **im Dateinamen** `SichttestSteuerung1.dll` | beim Laden (`sts_oeffne`) | DLL |
-| **Produkt** — Tag des Repos, etwa `v0.3.3` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
+| **Produkt** — Tag des Repos, etwa `v0.3.4` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
 
 **Was die große, was die kleine Nummer ändert**
 
@@ -444,6 +445,24 @@ ist, `testdb_einrichten`, wenn die Test-DB schon aktiv ist.
 **Woran der Tester das Fortsetzen erkennt** (beim Bauen festgelegt, 2026-10-09): der Lauf trägt
 schon mindestens eine Bewertung (Pass, Pass mit Befund, Fail oder übersprungen). Ein Lauf ohne
 Bewertung gilt als erster Lauf, auch wenn die Vorbereitung schon einmal gelaufen ist.
+
+**Welchen Lauf der Tester beim Öffnen einer Liste nimmt** (ab `v0.3.4`, Befunde CS B1, B3, B6,
+Entscheid Patrik 2026-10-10): den jüngsten der Liste, **solange er offene Schritte hat**
+(`summary.open` des Testlogs über null — dieselbe Regel wie im eingebauten Tester des Comm Studio,
+`TestProtokollWindow.cpp:901–916`). Ist der jüngste abgeschlossen, beginnt ein neuer Lauf; die
+Kopfzeile sagt es, und der abgeschlossene bleibt unverändert. Sortiert wird nach dem Namen, der
+den Zeitstempel trägt.
+
+Der Block **`build`** des Testlogs (`exe`, `exe_timestamp` als ISO) nennt die Exe, gegen die der
+Lauf lief: die der verbundenen Anwendung aus `hallo`. Ist keine verbunden, bleibt beim Fortsetzen
+stehen, was das Testlog schon nennt — ein im Comm Studio mit der Debug-Exe begonnener Lauf behält
+sie; nur ein neuer Lauf ohne Verbindung nimmt die Exe der Liste oder `start.exe` des Projekts.
+
+Offen bis Stufe 4 von §14 (Befunde CS B2, B4, B5): der Report des Werkzeugs entsteht bei jedem
+Schreiben und heißt `<lauf>.report.md`, der des Studios erst am Ende und heißt
+`<lauf>.testlog.report.md`; der erzeugte Punkt `V0` steht in `steps[]`; `summary.open` zählt eine
+offene Vorbereitung nicht mit, das Studio schon. Bis dahin wird ein Lauf in dem Tester beendet, in
+dem er begonnen wurde.
 
 ### 6.5 Ablage
 
@@ -606,7 +625,7 @@ sichttest-vX.Y.Z-win64/
 ├── include/   sichttest_steuerung.h · sichttest_steuerung.hpp · sichttest_steuerung_qt.hpp
 ├── bin/       SichttestSteuerung1.dll
 ├── sichttest/ Sichttest.exe mit seinem Qt
-└── VERSION    drei Zeilen: produkt=0.3.3 · s=1.0 · p=1
+└── VERSION    drei Zeilen: produkt=0.3.4 · s=1.0 · p=1
 ```
 
 Gebaut wird das Paket nur als Release, ohne `.pdb`. Verbindlich stehen S und P im Kopf
@@ -621,7 +640,7 @@ beim Bauen als Define `STS_PRODUKT` aus `Solution.json`, die Anwendung fragt sie
 sich mit jedem Schnüren, auch bei gleichem Inhalt:
 
 ```cmake
-set(SICHTTEST_VERSION "v0.3.3")
+set(SICHTTEST_VERSION "v0.3.4")
 set(SICHTTEST_URL     "https://github.com/PatrikNeunteufel/SichtTest_Helper/releases/download/${SICHTTEST_VERSION}/sichttest-${SICHTTEST_VERSION}-win64.zip")
 set(SICHTTEST_SHA256  "<64 Hex-Zeichen>")
 set(SICHTTEST_FALLBACK_PATHS "../SichtTest_Helper/out/package")

@@ -36,6 +36,7 @@ namespace sichttest
         QJsonArray nachbereitung; // Aktionen für das Ende des Laufs (nur JSON)
         QJsonArray nachbereitungLog; // was davon im Lauf ausgelöst wurde (Testlog: teardown_actions)
         QJsonObject steuerung; // mit welcher Anwendung und DLL der Lauf lief (Testlog: steuerung, Konzept §5)
+        QJsonObject build;     // gegen welche Exe der Lauf lief: exe, exe_timestamp (ISO) (Testlog: build)
         QJsonObject setup;     // Felder des Comm Studio, wie sie in der Liste stehen; gehen
         QJsonObject testDb;    // unverändert ins Testlog (test_db.active bleibt aus altem Lauf)
         QStringList hinweise;  // beim Laden bemerkt: Verweis auf unbekannte Kennung, Verweis im Kreis
@@ -81,8 +82,7 @@ namespace sichttest
     Zaehler zaehle(const QJsonArray& schritte);
     QString zeichen(const QString& ergebnis);
 
-    QJsonObject alsLog(const Protokoll& protokoll, const QString& gestartet,
-                       const QString& exeZeit);
+    QJsonObject alsLog(const Protokoll& protokoll, const QString& gestartet);
     QString alsReport(const Protokoll& protokoll, const QString& gestartet,
                       const QString& exeZeit);
 
@@ -91,6 +91,8 @@ namespace sichttest
     QString logOrdner(const QString& protokollPfad);
     QString logStamm(const QString& protokollPfad);
     QString neuesterLauf(const QString& protokollPfad);
+    // Ein Lauf ohne offene Schritte (summary.open des Testlogs) wird nicht fortgesetzt.
+    bool istAbgeschlossen(const QJsonObject& log);
 
     // Protokolle eines Ordners: *.testprotokoll.json und jede *.md mit Schritten;
     // mit Muster nur die Dateien, die darauf passen.
