@@ -204,6 +204,11 @@ namespace sichttest
         return a;
     }
 
+    bool istVerwaist(const QJsonObject& schritt)
+    {
+        return schritt.value(QStringLiteral("verwaist")).toBool();
+    }
+
     bool istVorbereitung(const QJsonObject& schritt)
     {
         return schritt.value(QStringLiteral("kind")).toString() == QLatin1String("prep");
@@ -345,14 +350,17 @@ namespace sichttest
         QStringList texte;
         auto bilde = [](const char* feld, const QString& text, const std::function<QJsonValue(const QString&)>& wert) {
             QString aktion;
+            QString wenn;
             QStringList schluessel;
-            if (!abbildung(projekt(), QLatin1String(feld), aktion, schluessel)) return QJsonObject();
+            if (!abbildung(projekt(), QLatin1String(feld), aktion, schluessel, &wenn)) return QJsonObject();
             // "fortgesetzt" ist vorbelegt: kein Feld der Liste, der Tester füllt es beim Aufruf (§7).
             QJsonObject mit;
             for (const QString& k : std::as_const(schluessel))
                 mit.insert(k, k == QLatin1String("fortgesetzt") ? QJsonValue(false) : wert(k));
-            return QJsonObject{ { QStringLiteral("aktion"), aktion }, { QStringLiteral("mit"), mit },
-                                { QStringLiteral("text"), text }, { QStringLiteral("feld"), QLatin1String(feld) } };
+            QJsonObject a{ { QStringLiteral("aktion"), aktion }, { QStringLiteral("mit"), mit },
+                           { QStringLiteral("text"), text }, { QStringLiteral("feld"), QLatin1String(feld) } };
+            if (!wenn.isEmpty()) a.insert(QStringLiteral("wenn"), wenn);
+            return a;
         };
 
         // Die Test-DB zuerst: die Tabs aus "setup" fragen beim Öffnen schon die Datenbank ab.
@@ -478,18 +486,53 @@ namespace sichttest
             const QJsonObject s = v.toObject();
             alt.insert(s.value(QStringLiteral("id")).toString(), s);
         }
+        // Der Build hängt am Urteil (§14.1): ein Urteil ohne eigenen Stempel — aus einem Lauf
+        // vor v0.4.0 oder aus dem Comm Studio — bekommt den, den der Lauf bis hierher nannte.
+        const QJsonObject laufBuild = log.value(QStringLiteral("build")).toObject();
+        const bool laufBuildDa = !laufBuild.value(QStringLiteral("exe")).toString().isEmpty()
+                                 || !laufBuild.value(QStringLiteral("exe_timestamp")).toString().isEmpty();
+        auto stempele = [&](QJsonObject& s) {
+            const QString r = s.value(QStringLiteral("result")).toString();
+            const bool urteil = r == QLatin1String("pass") || r == QLatin1String("pass_remark")
+                                || r == QLatin1String("fail") || r == QLatin1String("skip");
+            if (urteil && laufBuildDa && !s.contains(QStringLiteral("build")))
+                s.insert(QStringLiteral("build"), laufBuild);
+        };
+        QSet<QString> inDerListe;
         for (int n = 0; n < protokoll.schritte.size(); ++n)
         {
             QJsonObject s = protokoll.schritte.at(n).toObject();
+            inDerListe.insert(s.value(QStringLiteral("id")).toString());
             const auto it = alt.constFind(s.value(QStringLiteral("id")).toString());
             if (it == alt.constEnd()) continue;
             // history: das Befund-Archiv des Comm Studio — wird mitgeführt, damit alte Läufe ganz bleiben.
-            for (const char* feld : { "result", "remark", "screenshots", "rated", "actions", "history" })
+            for (const char* feld : { "result", "remark", "screenshots", "rated", "actions", "history", "build" })
                 if (it->contains(QLatin1String(feld)))
                     s.insert(QLatin1String(feld), it->value(QLatin1String(feld)));
             if (istVorbereitung(s)) s.insert(QStringLiteral("result"), QStringLiteral("prep"));
+            else stempele(s);
             protokoll.schritte.replace(n, s);
         }
+        // Verwaiste Urteile: der Schritt steht nicht mehr in der Liste, sein Befund bleibt.
+        for (const QJsonValue& v : schritte)
+        {
+            QJsonObject s = v.toObject();
+            if (inDerListe.contains(s.value(QStringLiteral("id")).toString())) continue;
+            const QString r = s.value(QStringLiteral("result")).toString();
+            const bool urteil = !r.isEmpty() && r != QLatin1String("open") && r != QLatin1String("prep");
+            const bool beleg = !s.value(QStringLiteral("remark")).toString().trimmed().isEmpty()
+                               || !s.value(QStringLiteral("screenshots")).toArray().isEmpty()
+                               || !s.value(QStringLiteral("history")).toArray().isEmpty();
+            if (!urteil && !beleg) continue;
+            if (r.isEmpty() || r == QLatin1String("prep")) s.insert(QStringLiteral("result"), QStringLiteral("open"));
+            stempele(s);
+            s.remove(QStringLiteral("aktionen"));
+            s.remove(QStringLiteral("kind"));
+            s.insert(QStringLiteral("verwaist"), true);
+            s.insert(QStringLiteral("section"), QStringLiteral("Nicht mehr in der Liste"));
+            protokoll.schritte.append(s);
+        }
+        protokoll.zustaende = log.value(QStringLiteral("zustaende")).toObject();
         protokoll.nachbereitungLog = log.value(QStringLiteral("teardown_actions")).toArray();
         protokoll.steuerung = log.value(QStringLiteral("steuerung")).toObject();
         protokoll.build = log.value(QStringLiteral("build")).toObject();
@@ -504,6 +547,7 @@ namespace sichttest
         for (const QJsonValue& v : schritte)
         {
             if (istVorbereitung(v.toObject())) continue;   // ohne Urteil, zählt nicht
+            if (istVerwaist(v.toObject())) continue;       // nicht mehr in der Liste, zählt nicht
             const QString r = v.toObject().value(QStringLiteral("result")).toString();
             if (r == QLatin1String("pass")) ++z.pass;
             else if (r == QLatin1String("pass_remark")) ++z.passBefund;
@@ -552,6 +596,7 @@ namespace sichttest
         if (!protokoll.nachbereitungLog.isEmpty())
             log.insert(QStringLiteral("teardown_actions"), protokoll.nachbereitungLog);
         if (!protokoll.steuerung.isEmpty()) log.insert(QStringLiteral("steuerung"), protokoll.steuerung);
+        if (!protokoll.zustaende.isEmpty()) log.insert(QStringLiteral("zustaende"), protokoll.zustaende);
         return log;
     }
 

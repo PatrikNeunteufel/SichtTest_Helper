@@ -37,6 +37,7 @@ namespace sichttest
         QJsonArray nachbereitungLog; // was davon im Lauf ausgelöst wurde (Testlog: teardown_actions)
         QJsonObject steuerung; // mit welcher Anwendung und DLL der Lauf lief (Testlog: steuerung, Konzept §5)
         QJsonObject build;     // gegen welche Exe der Lauf lief: exe, exe_timestamp (ISO) (Testlog: build)
+        QJsonObject zustaende; // was die Anwendung zuletzt gemeldet hat: name -> { steht, text } (Testlog: zustaende)
         QJsonObject setup;     // Felder des Comm Studio, wie sie in der Liste stehen; gehen
         QJsonObject testDb;    // unverändert ins Testlog (test_db.active bleibt aus altem Lauf)
         QStringList hinweise;  // beim Laden bemerkt: Verweis auf unbekannte Kennung, Verweis im Kreis
@@ -66,6 +67,9 @@ namespace sichttest
     QJsonObject leseAktion(const QString& stueck);
 
     bool istVorbereitung(const QJsonObject& schritt);
+    // Ein Urteil aus einem fortgesetzten Lauf, dessen Schritt die Liste nicht mehr kennt. Es
+    // bleibt im Testlog, zählt aber nicht und lässt sich nicht neu bewerten.
+    bool istVerwaist(const QJsonObject& schritt);
     // Aktionen eines Punkts, Verweise aufgelöst. Was sich nicht auflösen lässt, steht
     // mit "unbekannt": true in der Reihe und wird wie eine unbekannte Aktion behandelt.
     QJsonArray aktionenVon(const Protokoll& protokoll, int idx, QStringList* hinweise = nullptr);

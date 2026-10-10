@@ -16,10 +16,10 @@
 #include <stdint.h>
 
 #define STS_S_MAJOR 1          /* Fassung der Schnittstelle S, mit der die Anwendung übersetzt ist */
-#define STS_S_MINOR 0
+#define STS_S_MINOR 1          /* 1.1: sts_melde_zustand, sts_bei_ende */
 
 #define STS_P_MAJOR 1          /* Fassung des Protokolls P zwischen DLL und Tester */
-#define STS_P_MINOR 0
+#define STS_P_MINOR 1          /* 1.1: Nachricht zustand */
 
 /* Die Produktversion (Tag des Repos) steht nicht hier: die DLL trägt sie in sich, die
    Anwendung fragt sie mit sts_fassung() ab. Beim Bauen von DLL und Tester kommt sie als
@@ -106,6 +106,15 @@ STS_API int        sts_pumpe(sts_sitzung* s);
 STS_API void       sts_antwort_text(sts_antwort* antwort, const char* text);
 /* Freie Meldung an den Tester, erscheint dort in der Statuszeile und im Log. */
 STS_API sts_status sts_melde(sts_sitzung* s, const char* text);
+/* Ab S 1.1. Einen benannten Zustand melden, den die Anwendung herstellt und wieder abräumt
+   (etwa eine Test-Datenbank). name: [a-z0-9_.]; steht: 0 oder 1; text: frei, darf NULL sein.
+   Jederzeit erlaubt, auch vor sts_verbinde(): die DLL merkt sich den letzten Stand je Name
+   und schickt ihn bei jeder Änderung und nach jedem Verbinden. */
+STS_API sts_status sts_melde_zustand(sts_sitzung* s, const char* name, int steht, const char* text);
+/* Ab S 1.1. Rückruf, wenn eine bestehende Verbindung zum Tester endet. geordnet = 1: der
+   Tester hat sich verabschiedet (er wurde geschlossen); 0: Abriss. Läuft wie der Rückruf
+   einer Aktion in sts_pumpe(). Die DLL verbindet danach nicht von selbst neu. */
+STS_API void       sts_bei_ende(sts_sitzung* s, void (*ende)(void* nutzer, int geordnet), void* nutzer);
 /* STS_GETRENNT, STS_VERBINDET, STS_VERBUNDEN oder STS_ABGELEHNT (Fassung). */
 STS_API int        sts_zustand(sts_sitzung* s);
 /* Grund des letzten Fehlschlags dieser Sitzung. Der Text bleibt stehen, bis ein neuer

@@ -15,6 +15,8 @@
 #include "Protokoll.hpp"
 #include "Steuerung.hpp"
 
+#include <sichttest_steuerung.h>
+
 #include <QAction>
 #include <QApplication>
 #include <QHash>
@@ -278,7 +280,8 @@ namespace
             // schließt das Fenster danach von selbst. Begonnen ist ein Lauf mit einer Bewertung
             // oder wenn in dieser Sitzung eine Aktion der Vorbereitung gelaufen ist — sonst
             // bliebe stehen, was sie hergestellt hat.
-            if (!m_schliesstDanach && (hatBewertung() || m_vorbereitet) && bieteNachbereitungAn())
+            if (!m_schliesstDanach && (hatBewertung() || m_vorbereitet || !zustaendeDerListe(1).isEmpty())
+                && bieteNachbereitungAn())
             {
                 m_schliesstDanach = true;
                 e->ignore();
@@ -485,6 +488,23 @@ namespace
             m_endeHinweis->hide();
             lay->addWidget(m_endeHinweis);
             connect(endeBtn, &QPushButton::clicked, this, &QWidget::close);
+
+            // Die Anwendung meldet einen Zustand, für den die Liste eine Nachbereitung hat (§14.1):
+            // eine Zeile mit Knopf, ohne Dialog — auch gleich nach dem Verbinden.
+            m_stehtHinweis = new QWidget(this);
+            auto* stehtZeile = new QHBoxLayout(m_stehtHinweis);
+            stehtZeile->setContentsMargins(0, 0, 0, 0);
+            m_stehtText = new QLabel(m_stehtHinweis);
+            m_stehtText->setWordWrap(true);
+            m_stehtBtn = new QPushButton(QStringLiteral("Nachbereitung ausführen"), m_stehtHinweis);
+            stehtZeile->addWidget(m_stehtText, 1);
+            stehtZeile->addWidget(m_stehtBtn);
+            m_stehtHinweis->hide();
+            lay->addWidget(m_stehtHinweis);
+            connect(m_stehtBtn, &QPushButton::clicked, this, [this]() {
+                m_nachbereitet = false;
+                bieteNachbereitungAn();
+            });
             m_steuerung.beiEnde = [this](const QString& anwendung, bool geordnet) {
                 // Eine Aktion mit beendet_anwendung hat das Ende gewollt: kein Hinweis.
                 const bool gewollt = m_endeDurchAktion;
@@ -498,6 +518,8 @@ namespace
                 bemerkeAnwendungen();
                 merkeSteuerung();
                 merkeBuild();
+                merkeZustaende();
+                zeigeStehendes();
                 zeigeSteuerung();
                 aktualisiereAktionen();
                 weiterNachNeustart();
@@ -743,6 +765,8 @@ namespace
             zeige(erster >= 0 ? mitVorbereitung(erster, -1) : 0);
             aktualisiereSumme();
             zeigeSteuerung();
+            merkeZustaende();
+            zeigeStehendes();
         }
 
         QJsonObject schritt(int idx) const { return m_p.schritte.at(idx).toObject(); }
@@ -883,7 +907,7 @@ namespace
 
         void bewerte(const QString& ergebnis)
         {
-            if (m_idx < 0 || istVorbereitung(schritt(m_idx))) return;
+            if (m_idx < 0 || istVorbereitung(schritt(m_idx)) || istVerwaist(schritt(m_idx))) return;
             merkeBemerkung();
             QJsonObject s = schritt(m_idx);
             const bool beleg = !s.value(QStringLiteral("remark")).toString().isEmpty()
@@ -896,11 +920,22 @@ namespace
                 return;
             }
             s.insert(QStringLiteral("result"), ergebnis);
-            if (ergebnis == QLatin1String("open")) s.remove(QStringLiteral("rated"));
-            else s.insert(QStringLiteral("rated"),
-                          QDateTime::currentDateTime().toString(QStringLiteral("dd.MM. HH:mm")));
+            if (ergebnis == QLatin1String("open"))
+            {
+                s.remove(QStringLiteral("rated"));
+                s.remove(QStringLiteral("build"));
+            }
+            else
+            {
+                s.insert(QStringLiteral("rated"),
+                         QDateTime::currentDateTime().toString(QStringLiteral("dd.MM. HH:mm")));
+                // Der Build hängt am Urteil (§14.1); an der Wurzel steht der zuletzt benutzte.
+                m_p.build = aktuellerBuild();
+                s.insert(QStringLiteral("build"), m_p.build);
+            }
             m_p.schritte.replace(m_idx, s);
             schreibe();
+            zeigeStehendes();
             if (QListWidgetItem* it = eintrag(m_idx)) beschrifte(it, s);
             // FERTIG: die Nachbereitung der Liste anbieten (§6.2).
             if (zaehle(m_p.schritte).offen == 0) bieteNachbereitungAn();
@@ -924,7 +959,8 @@ namespace
             for (int k = 1; k <= n; ++k)
             {
                 const int i = (nach + k + n) % n;
-                if (schritt(i).value(QStringLiteral("result")).toString() == QLatin1String("open"))
+                if (schritt(i).value(QStringLiteral("result")).toString() == QLatin1String("open")
+                    && !istVerwaist(schritt(i)))
                     return i;
             }
             return -1;
@@ -1099,20 +1135,127 @@ namespace
         // Testlog, Block build: gegen welche Exe der Lauf lief. Die verbundene Anwendung nennt
         // ihre Exe selbst (hallo); ohne Verbindung bleibt beim Fortsetzen stehen, was das
         // Testlog schon trägt, und nur ein neuer Lauf nimmt die Exe aus Liste oder Projekt.
+        static QJsonObject alsBuild(const QString& exe, const QString& datei)
+        {
+            return QJsonObject{
+                { QStringLiteral("exe"), exe },
+                { QStringLiteral("exe_timestamp"),
+                  datei.isEmpty() ? QString() : QFileInfo(datei).lastModified().toString(Qt::ISODate) } };
+        }
+
+        // Der Build von jetzt: die Exe der verbundenen Anwendung, sonst die aus Liste oder Projekt.
+        QJsonObject aktuellerBuild() const
+        {
+            const Steuerung::Anwendung* a = m_steuerung.anwendung(m_p.anwendung);
+            if (a && !a->exe.isEmpty()) return alsBuild(a->exe, QFileInfo::exists(a->exe) ? a->exe : QString());
+            return alsBuild(m_p.exe, m_exeDatei);
+        }
+
         void merkeBuild()
         {
             if (m_p.pfad.isEmpty()) return;
-            auto alsBuild = [](const QString& exe, const QString& datei) {
-                return QJsonObject{
-                    { QStringLiteral("exe"), exe },
-                    { QStringLiteral("exe_timestamp"),
-                      datei.isEmpty() ? QString() : QFileInfo(datei).lastModified().toString(Qt::ISODate) } };
-            };
             const Steuerung::Anwendung* a = m_steuerung.anwendung(m_p.anwendung);
-            if (a && !a->exe.isEmpty())
-                m_p.build = alsBuild(a->exe, QFileInfo::exists(a->exe) ? a->exe : QString());
-            else if (m_p.build.value(QStringLiteral("exe")).toString().isEmpty())
-                m_p.build = alsBuild(m_p.exe, m_exeDatei);
+            if ((a && !a->exe.isEmpty()) || m_p.build.value(QStringLiteral("exe")).toString().isEmpty())
+                m_p.build = aktuellerBuild();
+        }
+
+        // --- Zustände der Anwendung (S 1.1, §14.1 Teil A) -----------------------
+
+        QJsonObject gemeldet() const
+        {
+            const Steuerung::Anwendung* a = m_steuerung.anwendung(m_p.anwendung);
+            return a ? a->zustaende : QJsonObject();
+        }
+
+        // -1: die Anwendung hat diesen Zustand nie gemeldet · 0: steht nicht · 1: steht
+        int stand(const QString& name) const
+        {
+            const QJsonObject z = gemeldet();
+            if (name.isEmpty() || !z.contains(name)) return -1;
+            return z.value(name).toObject().value(QStringLiteral("steht")).toBool() ? 1 : 0;
+        }
+
+        // Was von der Nachbereitung der Liste jetzt zum Angebot gehört: eine Aktion mit
+        // "wenn" nur, solange ihr Zustand nicht als abgeräumt gemeldet ist.
+        QJsonArray faelligeNachbereitung() const
+        {
+            QJsonArray faellig;
+            for (const QJsonValue& v : std::as_const(m_p.nachbereitung))
+                if (stand(v.toObject().value(QStringLiteral("wenn")).toString()) != 0) faellig.append(v);
+            return faellig;
+        }
+
+        // Zustände, die stehen (welcher = 1) oder als abgeräumt gemeldet sind (welcher = 0) und
+        // für die die Liste eine Nachbereitung hat.
+        QStringList zustaendeDerListe(int welcher) const
+        {
+            QStringList namen;
+            const QJsonObject z = gemeldet();
+            for (const QJsonValue& v : std::as_const(m_p.nachbereitung))
+            {
+                const QString name = v.toObject().value(QStringLiteral("wenn")).toString();
+                if (stand(name) != welcher) continue;
+                const QString text = z.value(name).toObject().value(QStringLiteral("text")).toString();
+                const QString eintrag = welcher == 1 && !text.isEmpty() ? QStringLiteral("%1 (%2)").arg(name, text) : name;
+                if (!namen.contains(eintrag)) namen.append(eintrag);
+            }
+            return namen;
+        }
+
+        // Testlog: zustaende ist, was die Anwendung zuletzt gemeldet hat. test_db.active folgt dem
+        // Zustand, den die Nachbereitung aus test_db.ende nennt — sonst gilt die Regel aus v0.3.5.
+        void merkeZustaende()
+        {
+            if (m_p.pfad.isEmpty()) return;
+            const QJsonObject z = gemeldet();
+            if (z.isEmpty()) return;
+            bool anders = m_p.zustaende != z;
+            m_p.zustaende = z;
+            const int s = testDbStand();
+            if (s >= 0 && !m_p.testDb.isEmpty()
+                && (!m_p.testDb.contains(QStringLiteral("active"))
+                    || m_p.testDb.value(QStringLiteral("active")).toBool() != (s == 1)))
+            {
+                m_p.testDb.insert(QStringLiteral("active"), s == 1);
+                anders = true;
+            }
+            if (anders && !m_lauf.aktiv && QFileInfo::exists(m_logPfad)) schreibe();
+        }
+
+        int testDbStand() const
+        {
+            for (const QJsonValue& v : std::as_const(m_p.nachbereitung))
+                if (v.toObject().value(QStringLiteral("feld")).toString() == QLatin1String("test_db.ende"))
+                    return stand(v.toObject().value(QStringLiteral("wenn")).toString());
+            return -1;
+        }
+
+        // Die Zeile unter der Statuszeile: was noch steht (mit Knopf), oder was einem
+        // fortgesetzten Lauf fehlt.
+        void zeigeStehendes()
+        {
+            if (!m_stehtHinweis) return;
+            const QStringList stehen = m_lauf.aktiv ? QStringList() : zustaendeDerListe(1);
+            if (!stehen.isEmpty())
+            {
+                m_stehtText->setText(QStringLiteral("In %1 steht noch: %2")
+                                         .arg(anwendungsName(), stehen.join(QStringLiteral(", "))));
+                m_stehtBtn->show();
+                m_stehtHinweis->show();
+                return;
+            }
+            const QStringList fehlen = m_lauf.aktiv || !hatBewertung() || zaehle(m_p.schritte).offen == 0
+                                           ? QStringList() : zustaendeDerListe(0);
+            if (!fehlen.isEmpty())
+            {
+                m_stehtText->setText(QStringLiteral("<span style='color:#d64545;'>⚠ Der Lauf ist begonnen, aber in %1 steht "
+                                                    "nicht mehr: %2. ↺ Vorbereitung stellt es wieder her.</span>")
+                                         .arg(anwendungsName().toHtmlEscaped(), fehlen.join(QStringLiteral(", ")).toHtmlEscaped()));
+                m_stehtBtn->hide();
+                m_stehtHinweis->show();
+                return;
+            }
+            m_stehtHinweis->hide();
         }
 
         QString anwendungsName() const
@@ -1172,7 +1315,7 @@ namespace
             const QJsonArray eigene = da ? aktionenVon(m_p, m_idx) : QJsonArray();
             const int v = da && !prep ? vorbereitungVon(m_p, m_idx) : -1;
 
-            for (QPushButton* k : std::as_const(m_urteil)) k->setVisible(!prep);
+            for (QPushButton* k : std::as_const(m_urteil)) k->setVisible(!prep && !(da && istVerwaist(schritt(m_idx))));
             m_weiterPrep->setVisible(prep);
             m_herstellen->setVisible(!eigene.isEmpty() || prep || m_lauf.aktiv);
             m_vorbereitungBtn->setVisible(v >= 0 && !aktionenVon(m_p, v).isEmpty());
@@ -1236,12 +1379,13 @@ namespace
         // nie während ein Lauf von Aktionen noch auf die Anwendung wartet. true = läuft.
         bool bieteNachbereitungAn()
         {
-            if (m_p.nachbereitung.isEmpty() || m_nachbereitet || m_lauf.aktiv
+            const QJsonArray faellig = faelligeNachbereitung();
+            if (faellig.isEmpty() || m_nachbereitet || m_lauf.aktiv
                 || !m_steuerung.anwendung(m_p.anwendung))
                 return false;
             m_nachbereitet = true;   // einmal je Lauf fragen, nicht bei jedem Anlass erneut
             QStringList namen;
-            for (const QJsonValue& v : std::as_const(m_p.nachbereitung))
+            for (const QJsonValue& v : faellig)
                 namen.append(v.toObject().value(QStringLiteral("aktion")).toString());
             if (!m_ohneRueckfrage
                 && QMessageBox::question(this, QStringLiteral("Sichttest"),
@@ -1249,7 +1393,7 @@ namespace
                            .arg(anwendungsName(), namen.join(QStringLiteral(", "))))
                    != QMessageBox::Yes)
                 return false;
-            starteAktionen(kNachbereitung, m_p.nachbereitung);
+            starteAktionen(kNachbereitung, faellig);
             return m_lauf.aktiv;
         }
 
@@ -1365,10 +1509,23 @@ namespace
                 QJsonObject a = m_lauf.liste.at(m_lauf.pos).toObject();
                 // Aus der Abbildung des Projekts: der vorbelegte Schlüssel "fortgesetzt" sagt der
                 // Anwendung, ob der Lauf schon eine Bewertung trägt (§6.4, §7).
+                // Dasselbe leistet in jeder Aktion der Wert {fortgesetzt} (§14.1).
                 QJsonObject mit = a.value(QStringLiteral("mit")).toObject();
+                bool gefuellt = false;
                 if (a.contains(QStringLiteral("feld")) && mit.contains(QStringLiteral("fortgesetzt")))
                 {
                     mit.insert(QStringLiteral("fortgesetzt"), m_lauf.fortsetzen);
+                    gefuellt = true;
+                }
+                const QStringList schluesselNamen = mit.keys();
+                for (const QString& k : schluesselNamen)
+                    if (mit.value(k).toString() == QLatin1String("{fortgesetzt}"))
+                    {
+                        mit.insert(k, m_lauf.fortsetzen);
+                        gefuellt = true;
+                    }
+                if (gefuellt)
+                {
                     a.insert(QStringLiteral("mit"), mit);
                     m_lauf.liste.replace(m_lauf.pos, a);
                 }
@@ -1427,7 +1584,7 @@ namespace
             }
             // test_db.active (Testlog): die Test-DB steht nach einem ok des Einrichtens und ist
             // nach einem ok des Abbauens weg — die Anwendung antwortet nie ok ohne Test-DB.
-            if (status == QLatin1String("ok") && !m_p.testDb.isEmpty())
+            if (status == QLatin1String("ok") && !m_p.testDb.isEmpty() && testDbStand() < 0)
             {
                 const QString feld = a.value(QStringLiteral("feld")).toString();
                 if (feld == QLatin1String("test_db")) m_p.testDb.insert(QStringLiteral("active"), true);
@@ -1498,6 +1655,8 @@ namespace
                          hand.toHtmlEscaped()));
             }
             aktualisiereAktionen();
+            merkeZustaende();
+            zeigeStehendes();
             if (idx == kNachbereitung && m_schliesstDanach) QTimer::singleShot(0, this, &QWidget::close);
         }
 
@@ -1567,17 +1726,49 @@ namespace
                    && stempel.contains(QLatin1Char('T')) && QDateTime::fromString(stempel, Qt::ISODate).isValid(),
                    QStringLiteral("build im Testlog: Exe der Liste, Stempel als ISO (%1)").arg(stempel));
 
+            pruefe(log.value(QStringLiteral("steps")).toArray().at(0).toObject().value(QStringLiteral("build")).toObject()
+                           .value(QStringLiteral("exe")).toString() == eigene,
+                   QStringLiteral("der Build hängt am Urteil: der bewertete Schritt trägt Exe und Stempel"));
+
+            // Ein Lauf wie aus dem Comm Studio: build nur an der Wurzel, dazu ein Urteil zu einem
+            // Schritt, den die Liste nicht mehr kennt.
             const QJsonObject fremd{ { QStringLiteral("exe"), QStringLiteral("C:/fremd/Debug/app.exe") },
                                      { QStringLiteral("exe_timestamp"), QStringLiteral("2026-09-01T14:14:08") } };
             log.insert(QStringLiteral("build"), fremd);
+            QJsonArray alteSchritte = log.value(QStringLiteral("steps")).toArray();
+            QJsonObject erster = alteSchritte.at(0).toObject();
+            erster.remove(QStringLiteral("build"));
+            alteSchritte.replace(0, erster);
+            alteSchritte.append(QJsonObject{ { QStringLiteral("id"), QStringLiteral("X9") }, { QStringLiteral("section"), QStringLiteral("A") },
+                                             { QStringLiteral("title"), QStringLiteral("Gibt es nicht mehr") },
+                                             { QStringLiteral("result"), QStringLiteral("fail") },
+                                             { QStringLiteral("remark"), QStringLiteral("alter Befund") } });
+            log.insert(QStringLiteral("steps"), alteSchritte);
             const QString lauf = m_logPfad;
             pruefe(schreibeDatei(lauf, QJsonDocument(log).toJson()), QStringLiteral("Testlog mit fremdem build ablegen"));
             oeffne(liste, false);
+            pruefe(m_logPfad == lauf && m_p.build == fremd && schritt(0).value(QStringLiteral("build")).toObject() == fremd,
+                   QStringLiteral("fortgesetzter Lauf ohne Verbindung: build bleibt, und das alte Urteil bekommt ihn als seinen"));
+            const int waise = findeSchritt(QStringLiteral("X9"));
+            pruefe(m_p.schritte.size() == 3 && waise == 2 && istVerwaist(schritt(waise))
+                   && schritt(waise).value(QStringLiteral("section")).toString() == QStringLiteral("Nicht mehr in der Liste")
+                   && zaehle(m_p.schritte).fail == 0 && zaehle(m_p.schritte).offen == 1,
+                   QStringLiteral("verwaistes Urteil: bleibt im Lauf, steht am Ende, zählt nicht"));
+            zeige(waise);
+            pruefe(m_urteil.first()->isHidden(), QStringLiteral("verwaistes Urteil: lässt sich ansehen, nicht bewerten"));
+            zeige(findeSchritt(QStringLiteral("A2")));
             klicke(QStringLiteral("✓ Pass"));
             log = leseJson(lauf);
-            pruefe(m_logPfad == lauf && log.value(QStringLiteral("build")).toObject() == fremd
+            const QJsonArray danach = log.value(QStringLiteral("steps")).toArray();
+            pruefe(log.value(QStringLiteral("build")).toObject().value(QStringLiteral("exe")).toString() == eigene
+                   && danach.at(0).toObject().value(QStringLiteral("build")).toObject() == fremd
+                   && danach.at(1).toObject().value(QStringLiteral("build")).toObject().value(QStringLiteral("exe")).toString() == eigene
                    && log.value(QStringLiteral("summary")).toObject().value(QStringLiteral("open")).toInt() == 0,
-                   QStringLiteral("fortgesetzter Lauf ohne Verbindung: build bleibt, wie das Testlog ihn nennt"));
+                   QStringLiteral("zwei Builds in einem Lauf: jedes Urteil behält seinen, die Wurzel nennt den letzten"));
+            pruefe(danach.size() == 3 && danach.at(2).toObject().value(QStringLiteral("verwaist")).toBool()
+                   && danach.at(2).toObject().value(QStringLiteral("remark")).toString() == QStringLiteral("alter Befund")
+                   && log.value(QStringLiteral("summary")).toObject().value(QStringLiteral("fail")).toInt() == 0,
+                   QStringLiteral("verwaistes Urteil: steht mit Bemerkung weiter im Testlog"));
         }
 
         // Der Leser allein, ohne Verbindung.
@@ -1715,7 +1906,7 @@ namespace
             pruefe(st.value(QStringLiteral("anwendung")).toString() == g
                    && st.value(QStringLiteral("version")).toString() == QLatin1String("1.2.3")
                    && st.value(QStringLiteral("produkt")).toString() == QLatin1String(STS_PRODUKT)
-                   && st.value(QStringLiteral("p")).toInt() == 1 && st.value(QStringLiteral("s")).toString() == QLatin1String("1.0")
+                   && st.value(QStringLiteral("p")).toInt() == 1 && st.value(QStringLiteral("s")).toString() == QStringLiteral("%1.%2").arg(STS_S_MAJOR).arg(STS_S_MINOR)
                    && st.value(QStringLiteral("zustand")).toString() == QLatin1String("verbunden"),
                    QStringLiteral("das Testlog trägt den Block steuerung: Anwendung, Version, Produkt, P, S, Zustand"));
             const QJsonObject build = aufPlatte.value(QStringLiteral("build")).toObject();
@@ -1790,8 +1981,8 @@ namespace
                       { QStringLiteral("tab"), QStringLiteral("echo titel") },
                       { QStringLiteral("restart"), QStringLiteral("ende") },
                       { QStringLiteral("sql"), QStringLiteral("echo sql") },
-                      { QStringLiteral("test_db"), QStringLiteral("echo name seed fortgesetzt") },
-                      { QStringLiteral("test_db.ende"), QStringLiteral("echo") } } } };
+                      { QStringLiteral("test_db"), QStringLiteral("stellt_her name seed fortgesetzt") },
+                      { QStringLiteral("test_db.ende"), QStringLiteral("raeumt wenn=probe") } } } };
             const QString projektDatei = wurzel.filePath(QStringLiteral(".sichttest/sichttest.projekt.json"));
             const QString studio = wurzel.filePath(QStringLiteral("listen/studio.testprotokoll.json"));
             const QString composer = wurzel.filePath(QStringLiteral("md/Composer_1.md"));
@@ -1871,6 +2062,13 @@ namespace
 
             auto status = [](const QJsonArray& log, int n) { return log.at(n).toObject().value(QStringLiteral("status")).toString(); };
             auto text = [](const QJsonArray& log, int n) { return log.at(n).toObject().value(QStringLiteral("text")).toString(); };
+            // S 1.1: die Gegenprobe meldet »probe« schon vor dem Verbinden als stehend.
+            pruefe(warteBis([&] { return stand(QStringLiteral("probe")) == 1; }, 3000)
+                   && !m_stehtHinweis->isHidden() && !m_stehtBtn->isHidden()
+                   && m_stehtText->text().contains(QStringLiteral("steht noch: probe (steht schon)")),
+                   QStringLiteral("Zustand: steht beim Verbinden schon etwas, sagt es eine Zeile mit Knopf"));
+            pruefe(m_p.testDb.value(QStringLiteral("active")).toBool(),
+                   QStringLiteral("Zustand: test_db.active folgt dem gemeldeten Zustand, noch bevor etwas eingerichtet wurde"));
             zeige(v0);
             klicke(QStringLiteral("▶ Ausführen"));
             warteBis([&] { return !m_lauf.aktiv; }, 15000);
@@ -1905,6 +2103,8 @@ namespace
                    QStringLiteral("Schließen nach bloßer Vorbereitung bietet die Nachbereitung an; sie läuft und steht im Lauf"));
             QCoreApplication::processEvents();   // das Schließen danach
             m_schliesstDanach = false;
+            pruefe(stand(QStringLiteral("probe")) == 0 && m_stehtHinweis->isHidden(),
+                   QStringLiteral("Zustand: nach der Nachbereitung steht nichts mehr, die Zeile ist weg"));
             const QJsonObject aufPlatte = leseJson(m_logPfad);
             pruefe(QFileInfo(m_logPfad).absolutePath() == QFileInfo(wurzel.filePath(QStringLiteral("ablage/studio"))).absoluteFilePath()
                    && aufPlatte.value(QStringLiteral("teardown_actions")).toArray().size() == 1
@@ -1916,9 +2116,20 @@ namespace
                    && !aufPlatte.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("active")).toBool(),
                    QStringLiteral("Test-DB: nach dem ok der Nachbereitung steht test_db.active im Testlog auf false"));
 
+            pruefe(aufPlatte.value(QStringLiteral("zustaende")).toObject().value(QStringLiteral("probe")).toObject()
+                           .contains(QStringLiteral("steht"))
+                   && !aufPlatte.value(QStringLiteral("zustaende")).toObject().value(QStringLiteral("probe")).toObject()
+                           .value(QStringLiteral("steht")).toBool(),
+                   QStringLiteral("Zustand: das Testlog trägt unter zustaende, was die Anwendung zuletzt gemeldet hat"));
+            pruefe(faelligeNachbereitung().isEmpty(),
+                   QStringLiteral("wenn: eine Nachbereitung, deren Zustand nicht steht, gehört nicht zum Angebot"));
+
             // Mit einer Bewertung gilt der Lauf als fortgesetzt; die Anwendung erfährt es.
             zeige(findeSchritt(QStringLiteral("s-01")));
             klicke(QStringLiteral("✓ Pass"));
+            pruefe(!m_stehtHinweis->isHidden() && m_stehtBtn->isHidden()
+                   && m_stehtText->text().contains(QStringLiteral("steht nicht mehr: probe")),
+                   QStringLiteral("Zustand: ein begonnener Lauf, dem sein Zustand fehlt, bekommt eine Warnung"));
             zeige(v0);
             klicke(QStringLiteral("▶ Ausführen"));
             warteBis([&] { return !m_lauf.aktiv; }, 15000);
@@ -1926,6 +2137,14 @@ namespace
             pruefe(log.size() == 6 && text(log, 3).contains(QLatin1String("\"fortgesetzt\":true"))
                    && leseJson(m_logPfad).value(QStringLiteral("test_db")).toObject().value(QStringLiteral("active")).toBool(),
                    QStringLiteral("Test-DB: nach einer Bewertung ist fortgesetzt true; test_db.active steht wieder"));
+            pruefe(!m_stehtHinweis->isHidden() && m_stehtText->text().contains(QStringLiteral("steht noch: probe (hergestellt)")),
+                   QStringLiteral("Zustand: nach der Vorbereitung steht er wieder, die Zeile sagt es"));
+            starteAktionen(v0, QJsonArray{ QJsonObject{ { QStringLiteral("aktion"), QStringLiteral("echo") },
+                { QStringLiteral("mit"), QJsonObject{ { QStringLiteral("lauf"), QStringLiteral("{fortgesetzt}") } } } } });
+            warteBis([&] { return !m_lauf.aktiv; }, 5000);
+            log = ausgeloest(QStringLiteral("V0"));
+            pruefe(text(log, int(log.size()) - 1).contains(QLatin1String("\"lauf\":true")),
+                   QStringLiteral("{fortgesetzt}: der Platzhalter wird in jeder Aktion gefüllt"));
 
             zeige(findeSchritt(QStringLiteral("s-02")));
             klicke(QStringLiteral("▶ Herstellen"));
@@ -2052,6 +2271,9 @@ namespace
         bool      m_endeDurchAktion = false;  // eine Aktion mit beendet_anwendung ist gelaufen: das Ende ist gewollt
         QWidget*  m_endeHinweis = nullptr;
         QLabel*   m_endeText = nullptr;
+        QWidget*  m_stehtHinweis = nullptr;   // »In … steht noch: …« mit Knopf, oder die Warnung beim Fortsetzen
+        QLabel*   m_stehtText = nullptr;
+        QPushButton* m_stehtBtn = nullptr;
         QHash<QString, QString> m_gemeldeteExe;   // Anwendung → Exe aus ihrem letzten hallo
         QSet<qint64> m_gesehen;               // Pids, deren Verbindung schon ausgewertet ist
         QTimer    m_startFrist;

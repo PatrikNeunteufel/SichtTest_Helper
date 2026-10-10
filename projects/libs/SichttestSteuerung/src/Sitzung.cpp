@@ -171,7 +171,11 @@ struct sts_sitzung
     std::string fehler;
     void (*wecker)(void*) = nullptr;
     void* weckerNutzer = nullptr;
+    std::map<std::string, std::pair<bool, std::string>> zustaende;   // S 1.1: letzter Stand je Name
+    void (*endeRuf)(void*, int) = nullptr;                           // S 1.1: sts_bei_ende
+    void* endeNutzer = nullptr;
 
+    std::atomic<int> endeWartet{ 0 };   // 0 nichts, 1 Abriss, 2 geordnet — zugestellt in sts_pumpe()
     std::string fehlerAusgabe;          // was sts_letzter_fehler() zuletzt herausgab
     std::atomic<int> zustand{ STS_GETRENNT };
     std::atomic<bool> ende{ false };    // sts_schliesse() läuft
@@ -221,6 +225,24 @@ namespace
             }
         }
         if (!liste.empty()) sende(s, "{\"nachricht\":\"aktionen\",\"aktionen\":[" + liste + "]}");
+    }
+
+    std::string alsZustand(const std::string& name, bool steht, const std::string& text)
+    {
+        return "{\"nachricht\":\"zustand\",\"name\":" + json::zitiert(name) + ",\"steht\":" + (steht ? "true" : "false")
+             + ",\"text\":" + json::zitiert(text) + "}";
+    }
+
+    // Nach dem Verbinden: der Tester erfährt, was gerade steht und was nicht (P 1.1).
+    void meldeZustaende(sts_sitzung* s)
+    {
+        std::vector<std::string> nachrichten;
+        {
+            const std::lock_guard<std::mutex> sperre(s->m);
+            for (const auto& z : s->zustaende)
+                nachrichten.push_back(alsZustand(z.first, z.second.first, z.second.second));
+        }
+        for (const std::string& n : nachrichten) sende(s, n);
     }
 
     std::string hallo(sts_sitzung* s)
@@ -325,7 +347,8 @@ namespace
         return STS_VERBUNDEN;
     }
 
-    void lies(sts_sitzung* s)
+    // true: der Tester hat sich verabschiedet (geordnetes Ende).
+    bool lies(sts_sitzung* s)
     {
         std::string text;
         while (!s->ende && !s->abbruch)
@@ -335,7 +358,7 @@ namespace
             if (st != KanalStatus::Ok)
             {
                 setzeFehler(s, s->kanal.leseFehler());
-                return;
+                return false;
             }
             std::map<std::string, std::string> felder;
             json::zerlege(text, felder);
@@ -343,7 +366,7 @@ namespace
             if (nachricht == "tschuess")
             {
                 setzeFehler(s, "der Tester hat sich verabschiedet");
-                return;
+                return true;
             }
             const auto id = felder.find("id");
             if (nachricht == "aufruf")
@@ -369,11 +392,13 @@ namespace
                          + ",\"status\":\"unbekannt\",\"text\":"
                          + json::zitiert("unbekannte Nachricht: " + nachricht) + "}");
         }
+        return false;
     }
 
     void lauf(sts_sitzung* s)
     {
         int zustand = STS_GETRENNT;
+        int ende = 0;   // 1 Abriss, 2 geordnet: eine bestehende Verbindung ist zu Ende gegangen
         if (verbinde(s))
         {
             zustand = begruesse(s);
@@ -381,16 +406,28 @@ namespace
             {
                 s->zustand = STS_VERBUNDEN;
                 meldeNach(s);
-                lies(s);
+                meldeZustaende(s);
+                const bool geordnet = lies(s);
+                if (!s->ende) ende = geordnet ? 2 : 1;   // nicht beim eigenen sts_schliesse()
                 zustand = STS_GETRENNT;
             }
         }
         schliesseKanal(s);
+        void (*wecker)(void*) = nullptr;
+        void* nutzer = nullptr;
         {
             const std::lock_guard<std::mutex> sperre(s->m);
             s->wartend.clear();
+            wecker = s->wecker;
+            nutzer = s->weckerNutzer;
         }
         s->zustand = zustand;
+        if (ende != 0)
+        {
+            // Zugestellt wird im Thread der Anwendung: sts_pumpe() ruft sts_bei_ende.
+            s->endeWartet = ende;
+            if (wecker) wecker(nutzer);
+        }
     }
 }
 
@@ -514,6 +551,28 @@ int sts_pumpe(sts_sitzung* s)
     int anzahl = 0;
     try
     {
+        // S 1.1: das Ende der Verbindung, einmal je Ende.
+        const int ende = s->endeWartet.exchange(0);
+        if (ende != 0)
+        {
+            void (*ruf)(void*, int) = nullptr;
+            void* nutzer = nullptr;
+            {
+                const std::lock_guard<std::mutex> sperre(s->m);
+                ruf = s->endeRuf;
+                nutzer = s->endeNutzer;
+            }
+            if (ruf)
+            {
+                try
+                {
+                    ruf(nutzer, ende == 2 ? 1 : 0);
+                }
+                catch (...)
+                {
+                }
+            }
+        }
         for (;;)
         {
             Aufruf auf;
@@ -578,6 +637,39 @@ sts_status sts_melde(sts_sitzung* s, const char* text)
     {
         return STS_FEHLER;
     }
+}
+
+sts_status sts_melde_zustand(sts_sitzung* s, const char* name, int steht, const char* text)
+{
+    try
+    {
+        if (!s) return STS_UNGUELTIG;
+        if (!nameGueltig(name))
+        {
+            setzeFehler(s, "sts_melde_zustand: Name nur aus [a-z0-9_.]");
+            return STS_UNGUELTIG;
+        }
+        const std::string t = text ? text : "";
+        {
+            const std::lock_guard<std::mutex> sperre(s->m);
+            s->zustaende[name] = { steht != 0, t };
+        }
+        // Ohne Verbindung bleibt es beim Merken; geschickt wird nach dem Verbinden.
+        if (s->zustand == STS_VERBUNDEN) sende(s, alsZustand(name, steht != 0, t));
+        return STS_OK;
+    }
+    catch (...)
+    {
+        return STS_FEHLER;
+    }
+}
+
+void sts_bei_ende(sts_sitzung* s, void (*ende)(void* nutzer, int geordnet), void* nutzer)
+{
+    if (!s) return;
+    const std::lock_guard<std::mutex> sperre(s->m);
+    s->endeRuf = ende;
+    s->endeNutzer = nutzer;
 }
 
 int sts_zustand(sts_sitzung* s)

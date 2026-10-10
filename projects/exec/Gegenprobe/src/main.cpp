@@ -39,9 +39,12 @@ namespace
         decltype(&sts_zustand) zustand = nullptr;
         decltype(&sts_letzter_fehler) letzter_fehler = nullptr;
         decltype(&sts_schliesse) schliesse = nullptr;
+        decltype(&sts_melde_zustand) melde_zustand = nullptr;
+        decltype(&sts_bei_ende) bei_ende = nullptr;
     };
 
     Dll d;
+    int g_testerWeg = -1;   // sts_bei_ende: 1 geordnet, 0 Abriss
     int g_fehler = 0;
     HANDLE g_weck = nullptr;
     bool g_ende = false;
@@ -119,6 +122,21 @@ namespace
         return STS_OK;
     }
 
+    // S 1.1: der Zustand »probe«. stellt_her meldet ihn als stehend und schickt die Argumente
+    // zurück (wie echo), raeumt meldet ihn als abgeräumt.
+    sts_status stelltHer(void*, const char*, const char* argumente, sts_antwort* antwort)
+    {
+        d.antwort_text(antwort, argumente);
+        return d.melde_zustand(g_sitzung, "probe", 1, "hergestellt");
+    }
+
+    sts_status raeumt(void*, const char*, const char*, sts_antwort*)
+    {
+        return d.melde_zustand(g_sitzung, "probe", 0, "abgeräumt");
+    }
+
+    void testerWeg(void*, int geordnet) { g_testerWeg = geordnet; }
+
     sts_konfig konfig()
     {
         sts_konfig k{};
@@ -169,6 +187,9 @@ namespace
         pruefe(d.zustand(g_sitzung) == STS_GETRENNT && d.pumpe(g_sitzung) == 0
                && d.melde(g_sitzung, "x") == STS_KEIN_TESTER,
                "vor dem Verbinden: getrennt, nichts zu pumpen, sts_melde sagt kein Tester");
+        pruefe(d.melde_zustand(g_sitzung, "Mit Leerzeichen", 1, "") == STS_UNGUELTIG
+               && d.melde_zustand(g_sitzung, "probe", 1, nullptr) == STS_OK,
+               "sts_melde_zustand: Name außerhalb [a-z0-9_.] ist ungültig; vor dem Verbinden wird gemerkt");
 
         pruefe(d.verbinde(g_sitzung) == STS_OK, "sts_verbinde kehrt sofort zurück");
         const ULONGLONG bis = GetTickCount64() + 3000;
@@ -192,7 +213,11 @@ namespace
         gut = gut && melde("meldet", "Schickt eine Meldung", "", 0, meldet) == STS_OK;
         gut = gut && melde("spaet", "Meldet eine weitere Aktion an", "", 0, spaet) == STS_OK;
         gut = gut && melde("ende", "Beendet die Gegenprobe", "", STS_BEENDET_ANWENDUNG, ende) == STS_OK;
-        pruefe(gut, "acht Aktionen angemeldet");
+        gut = gut && melde("stellt_her", "Meldet den Zustand probe als stehend", "beliebig", 0, stelltHer) == STS_OK;
+        gut = gut && melde("raeumt", "Meldet den Zustand probe als abgeräumt", "", 0, raeumt) == STS_OK;
+        pruefe(gut, "zehn Aktionen angemeldet");
+        // S 1.1: ein Zustand, der schon vor dem Verbinden steht (Rest eines alten Laufs).
+        pruefe(d.melde_zustand(g_sitzung, "probe", 1, "steht schon") == STS_OK, "Zustand probe vor dem Verbinden gemeldet");
         d.verbinde(g_sitzung);
 
         const ULONGLONG bis = GetTickCount64() + 30000;
@@ -259,6 +284,27 @@ namespace
         pruefe(fertig, "Kopf: der Tester hat die Aktion ende gerufen");
     }
 
+    // S 1.1: eine Anwendung mit Köpfen S 1.0 wird angenommen, und sie erfährt das Ende des Testers.
+    void abschied()
+    {
+        sts_konfig k = konfig();
+        k.s_minor = 0;
+        pruefe(d.oeffne(&k, &g_sitzung) == STS_OK && g_sitzung, "sts_oeffne: eine Anwendung mit S 1.0 wird angenommen");
+        if (!g_sitzung) return;
+        d.setze_wecker(g_sitzung, wecke, nullptr);
+        d.bei_ende(g_sitzung, testerWeg, nullptr);
+        d.verbinde(g_sitzung);
+        const ULONGLONG bis = GetTickCount64() + 20000;
+        while (g_testerWeg < 0 && GetTickCount64() < bis)
+        {
+            WaitForSingleObject(g_weck, 100);
+            d.pumpe(g_sitzung);
+        }
+        pruefe(g_testerWeg == 1, "sts_bei_ende: der Tester hat sich verabschiedet (geordnet), zugestellt in sts_pumpe");
+        pruefe(d.zustand(g_sitzung) == STS_GETRENNT, "nach dem Ende des Testers: Zustand getrennt, kein neues Verbinden");
+        d.schliesse(g_sitzung);
+    }
+
     void start()
     {
         const sts_konfig k = konfig();
@@ -278,7 +324,7 @@ int main()
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!argv || argc < 3)
     {
-        std::fputs("Aufruf: Gegenprobe <dll> lokal|anwendung|kopf|start\n", stderr);
+        std::fputs("Aufruf: Gegenprobe <dll> lokal|anwendung|kopf|start|abschied\n", stderr);
         return 101;
     }
 
@@ -301,7 +347,9 @@ int main()
     da += hole(dll, "sts_zustand", d.zustand);
     da += hole(dll, "sts_letzter_fehler", d.letzter_fehler);
     da += hole(dll, "sts_schliesse", d.schliesse);
-    if (da != 11) return 102;
+    da += hole(dll, "sts_melde_zustand", d.melde_zustand);
+    da += hole(dll, "sts_bei_ende", d.bei_ende);
+    if (da != 13) return 102;
 
     g_weck = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     const std::wstring szenario = argv[2];
@@ -309,6 +357,7 @@ int main()
     else if (szenario == L"anwendung") anwendung();
     else if (szenario == L"kopf") kopf(argv[1]);
     else if (szenario == L"start") start();
+    else if (szenario == L"abschied") abschied();
     else return 101;
 
     std::fflush(stdout);

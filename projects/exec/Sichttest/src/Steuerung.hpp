@@ -36,6 +36,7 @@ namespace sichttest
             qint64 pid = 0;
             int p = 0;             // gewählte große Fassung von P
             QJsonArray aktionen;   // je Aktion: name, beschreibung, parameter, schalter[]
+            QJsonObject zustaende; // P 1.1: je gemeldetem Zustand name -> { steht, text }
         };
 
         // status: ok, fehler, unbekannt, ungueltig (von der Anwendung) —

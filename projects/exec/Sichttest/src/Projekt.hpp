@@ -60,5 +60,8 @@ namespace sichttest
 
     // Abbildung eines Felds ("tab", "setup.open", …) auf eine Aktion: aus
     // "tab_zeigen titel" wird aktion = tab_zeigen, schluessel = { titel }.
-    bool abbildung(const Projekt& projekt, const QString& feld, QString& aktion, QStringList& schluessel);
+    // Ein Stück "wenn=<zustand>" ist kein Schlüssel: es nennt den Zustand der Anwendung, für
+    // den die Aktion da ist (Konzept §14.1 Teil A), und kommt in *wenn an.
+    bool abbildung(const Projekt& projekt, const QString& feld, QString& aktion, QStringList& schluessel,
+                   QString* wenn = nullptr);
 }

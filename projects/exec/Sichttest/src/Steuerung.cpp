@@ -153,6 +153,18 @@ namespace sichttest
         {
             if (beiMeldung) beiMeldung(v.app.name, o.value(QStringLiteral("text")).toString());
         }
+        else if (art == QLatin1String("zustand"))
+        {
+            // P 1.1: die Anwendung sagt, was sie hergestellt hat und was nicht mehr steht.
+            const QString name = o.value(QStringLiteral("name")).toString();
+            if (!name.isEmpty())
+            {
+                v.app.zustaende.insert(name, QJsonObject{
+                    { QStringLiteral("steht"), o.value(QStringLiteral("steht")).toBool() },
+                    { QStringLiteral("text"), o.value(QStringLiteral("text")).toString() } });
+                geaendert();
+            }
+        }
         else if (art == QLatin1String("tschuess"))
         {
             // Das Ende der Verbindung folgt von selbst; gemerkt wird nur, dass es geordnet war.
@@ -432,7 +444,7 @@ namespace sichttest
                QStringLiteral("die Anwendung meldet sich mit hallo und wird begrüßt"));
         if (const Steuerung::Anwendung* a = st.anwendung(g))
         {
-            pruefe(a->version == QLatin1String("1.2.3") && a->s == QLatin1String("1.0") && a->p == STS_P_MAJOR
+            pruefe(a->version == QLatin1String("1.2.3") && a->s == QStringLiteral("%1.%2").arg(STS_S_MAJOR).arg(STS_S_MINOR) && a->p == STS_P_MAJOR
                    && a->produkt == QLatin1String(STS_PRODUKT),
                    QStringLiteral("hallo trägt Version, S, P und Produkt"));
             pruefe(a->pid == app.processId() && QFileInfo(a->exe) == QFileInfo(gegenprobe),
@@ -441,10 +453,18 @@ namespace sichttest
             for (const QJsonValue& v : a->aktionen)
                 if (v.toObject().value(QStringLiteral("name")).toString() == QLatin1String("ende"))
                     schalterEnde = v.toObject().value(QStringLiteral("schalter")).toVariant().toStringList();
-            pruefe(a->aktionen.size() == 8 && st.kennt(g, QStringLiteral("echo"))
+            pruefe(a->aktionen.size() == 10 && st.kennt(g, QStringLiteral("echo"))
                    && schalterEnde == QStringList{ QStringLiteral("beendet_anwendung") },
-                   QStringLiteral("acht Aktionen gemeldet, Schalter als Wörter (gezählt %1)").arg(a->aktionen.size()));
+                   QStringLiteral("zehn Aktionen gemeldet, Schalter als Wörter (gezählt %1)").arg(a->aktionen.size()));
         }
+        // P 1.1: was die Anwendung vor dem Verbinden gemeldet hat, kommt nach dem hallo an.
+        auto probe = [&]() {
+            const Steuerung::Anwendung* a = st.anwendung(g);
+            return a ? a->zustaende.value(QStringLiteral("probe")).toObject() : QJsonObject();
+        };
+        pruefe(warteBis([&] { return probe().value(QStringLiteral("steht")).toBool(); }, 3000)
+               && probe().value(QStringLiteral("text")).toString() == QLatin1String("steht schon"),
+               QStringLiteral("Zustand: ein vor dem Verbinden gemeldeter Zustand kommt nach dem hallo an"));
 
         struct Ergebnis { QString status; QString text; bool da = false; };
         auto rufe = [&](const QString& anwendung, const QString& aktion, const QJsonObject& argumente,
@@ -498,6 +518,13 @@ namespace sichttest
         pruefe(e.status == QLatin1String("ok") && alsObjekt(e.text) == arg,
                QStringLiteral("die nachgemeldete Aktion lässt sich aufrufen"));
 
+        e = rufe(g, QStringLiteral("raeumt"), {}, 5000);
+        pruefe(e.status == QLatin1String("ok")
+               && warteBis([&] { return probe().contains(QStringLiteral("steht"))
+                                        && !probe().value(QStringLiteral("steht")).toBool(); }, 3000)
+               && probe().value(QStringLiteral("text")).toString() == QStringLiteral("abgeräumt"),
+               QStringLiteral("Zustand: eine Änderung kommt sofort an (steht nicht mehr)"));
+
         e = rufe(g, QStringLiteral("ende"), {}, 5000);
         const QString ausgabe = warteAufEnde(app, 5000);
         pruefe(e.status == QLatin1String("ok") && !ausgabe.isEmpty() && app.exitCode() == 0,
@@ -505,6 +532,22 @@ namespace sichttest
                    .arg(app.exitCode()));
         pruefe(warteBis([&] { return st.anwendung(g) == nullptr; }, 2000),
                QStringLiteral("der Tester bemerkt das Ende der Verbindung"));
+
+        // S 1.1: eine Anwendung mit S 1.0 wird angenommen; schließt der Tester, erfährt sie es.
+        {
+            const QString eigener = kanal + QStringLiteral("-abschied");
+            QProcess p;
+            {
+                Steuerung kurz;
+                kurz.lausche(eigener);
+                starte(p, QStringLiteral("abschied"), eigener);
+                pruefe(warteBis([&] { return kurz.anwendung(g) != nullptr; }, 10000),
+                       QStringLiteral("Abschied: die Anwendung mit S 1.0 meldet sich"));
+            }   // der Tester endet und verabschiedet sich
+            const QString text = warteAufEnde(p, 10000);
+            pruefe(!text.isEmpty() && p.exitCode() == 0,
+                   QStringLiteral("Abschied: die Anwendung erfährt das geordnete Ende des Testers (Exit %1)").arg(p.exitCode()));
+        }
 
         // 3. Die Köpfe für C++ und für Qt: je eine Anwendung, die nur den Kopf benutzt.
         {

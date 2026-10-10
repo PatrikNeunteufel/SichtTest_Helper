@@ -135,12 +135,18 @@ namespace sichttest
         return {};
     }
 
-    bool abbildung(const Projekt& projekt, const QString& feld, QString& aktion, QStringList& schluessel)
+    bool abbildung(const Projekt& projekt, const QString& feld, QString& aktion, QStringList& schluessel,
+                   QString* wenn)
     {
         QStringList teile = projekt.abbildung.value(feld).toString().split(QLatin1Char(' '), Qt::SkipEmptyParts);
         if (teile.isEmpty()) return false;
         aktion = teile.takeFirst();
-        schluessel = teile;
+        schluessel.clear();
+        for (const QString& t : std::as_const(teile))
+        {
+            if (!t.contains(QLatin1Char('='))) schluessel.append(t);
+            else if (wenn && t.startsWith(QLatin1String("wenn="))) *wenn = t.mid(5);
+        }
         return true;
     }
 }

@@ -67,7 +67,7 @@ in einer kleinen Fassung wachsen kann; kein Aufruf wirft.
 
 ```c
 #define STS_S_MAJOR 1          /* Fassung der Schnittstelle S, mit der die Anwendung übersetzt ist */
-#define STS_S_MINOR 0
+#define STS_S_MINOR 1          /* 1.1: sts_melde_zustand, sts_bei_ende */
 
 typedef struct sts_sitzung sts_sitzung;        /* undurchsichtig */
 typedef struct sts_antwort sts_antwort;        /* undurchsichtig, lebt nur im Rückruf */
@@ -128,6 +128,15 @@ int        sts_pumpe(sts_sitzung* s);
 void       sts_antwort_text(sts_antwort* antwort, const char* text);
 /* Freie Meldung an den Tester, erscheint dort in der Statuszeile und im Log. */
 sts_status sts_melde(sts_sitzung* s, const char* text);
+/* Ab S 1.1. Einen benannten Zustand melden, den die Anwendung herstellt und wieder abräumt
+   (etwa eine Test-Datenbank). name: [a-z0-9_.]; steht: 0 oder 1; text: frei, darf NULL sein.
+   Jederzeit erlaubt, auch vor sts_verbinde(): die DLL merkt sich den letzten Stand je Name
+   und schickt ihn bei jeder Änderung und nach jedem Verbinden. */
+sts_status sts_melde_zustand(sts_sitzung* s, const char* name, int steht, const char* text);
+/* Ab S 1.1. Rückruf, wenn eine bestehende Verbindung zum Tester endet. geordnet = 1: der
+   Tester wurde geschlossen; 0: Abriss. Läuft wie eine Aktion in sts_pumpe(). Die DLL
+   verbindet danach nicht von selbst neu. */
+void       sts_bei_ende(sts_sitzung* s, void (*ende)(void* nutzer, int geordnet), void* nutzer);
 /* 0 = getrennt, 1 = verbindet, 2 = verbunden, 3 = abgelehnt (Fassung). */
 int        sts_zustand(sts_sitzung* s);
 /* Grund des letzten Fehlschlags dieser Sitzung. Der Text bleibt stehen, bis ein neuer
@@ -205,9 +214,17 @@ sind leer, wenn die DLL fehlt oder die Fassung nicht passt; beide kennen `aktion
 `sichttest::ok()`, `sichttest::fehler(text)` und `sichttest::ungueltig(text)`. Eine Ausnahme aus
 einer Aktion wird zum Status `fehler` mit ihrem Text.
 
+**Zustände der Anwendung (S 1.1, ab `v0.4.0`; Vorschlag CS, Entscheid Patrik 2026-10-10).** Was
+eine Anwendung herstellt und wieder abräumt, kennt nur sie selbst — eine Test-Datenbank kann aus
+einem alten Lauf noch stehen oder von Hand abgebaut sein. Deshalb meldet die Anwendung solche
+Zustände mit Namen (`sts_melde_zustand`, in den Köpfen `meldeZustand(name, steht, text)`), und der
+Tester schreibt nicht mehr selbst mit, was er für wahr hält. Über `sts_bei_ende` (`beiEnde`)
+erfährt sie, dass der Tester gegangen ist. Eine Anwendung, die mit den Köpfen S 1.0 übersetzt ist,
+läuft gegen die DLL S 1.1 unverändert weiter (§5); der Selbsttest prüft das.
+
 **Bewusst nicht in Fassung 1:** Aktionen, die erst später fertig werden (Antwort nach dem
-Rückruf), Abfragen des Zustands der Anwendung durch den Tester, Ereignisse der Anwendung als
-Bedingung eines Schritts. Alles drei lässt sich als kleine Fassung (neue Aufrufe) nachtragen.
+Rückruf), Ereignisse der Anwendung als Bedingung eines Schritts. Beides lässt sich als kleine
+Fassung (neue Aufrufe) nachtragen.
 
 ## 4. Kanal und Protokoll P (Sichttest.exe ↔ DLL)
 
@@ -272,6 +289,7 @@ Welche Nachricht ein Rahmen trägt, steht im Feld **`nachricht`** (`{"nachricht"
 | `aufruf` | Tester → DLL | `id`, `aktion`, `argumente{}`, `basis` (Root des Projekts nach §7, sonst der Ordner der Liste). Der Tester reicht jeden Wert **unverändert** durch, auch Pfade; aufgelöst wird in der Anwendung (das Comm Studio löst gegen Repo und Exe-Ordner auf und lässt nur Ziele darunter zu, `TestProtokollWindow.cpp:1407–1417`), `basis` ist nur ein Angebot |
 | `antwort` | DLL → Tester | `id`, `status` (`ok`, `fehler`, `unbekannt`, `ungueltig`), `text` |
 | `meldung` | DLL → Tester | freier Text |
+| `zustand` | DLL → Tester | ab P 1.1: `name`, `steht` (wahr/falsch), `text` — der letzte Stand eines Zustands, bei jeder Änderung und nach jedem Verbinden |
 | `tschuess` | beide | geordnetes Ende |
 
 Eine Nachricht, die die DLL nicht kennt, beantwortet sie mit `antwort`, Status `unbekannt` (mit der
@@ -387,6 +405,23 @@ Neu, allgemein:
 }
 ```
 
+**`wenn` und die Zustände der Anwendung** (ab `v0.4.0`, §3): eine Aktion der Nachbereitung kann
+mit `"wenn": "<zustand>"` nennen, wofür sie da ist — `{ "aktion": "testdb_abbauen", "wenn":
+"test_db" }`, in der `abbildung` als `"test_db.ende": "testdb_abbauen wenn=test_db"`. Sie gehört nur
+zum Angebot, solange die Anwendung diesen Zustand nicht als abgeräumt gemeldet hat; ohne `wenn`,
+oder wenn die Anwendung den Zustand nie meldet, gilt die Regel unten. Steht ein Zustand, zu dem
+die offene Liste eine Nachbereitung hat, zeigt der Tester es als Zeile unter der Statuszeile —
+„In CommStudio 0.4.0 steht noch: test_db (studiotest)" mit dem Knopf **Nachbereitung
+ausführen** —, sofort nach dem Verbinden und ohne Dialog; beim Schließen bietet er sie dann in
+jedem Fall an. Trägt ein Lauf schon eine Bewertung, hat er noch offene Schritte und meldet die
+Anwendung den Zustand als abgeräumt, warnt dieselbe Zeile. Das Testlog trägt an der Wurzel
+`zustaende { name: { steht, text } }`: was die Anwendung zuletzt gemeldet hat.
+
+**`{fortgesetzt}`** (ab `v0.4.0`): steht dieser Wert in den Argumenten irgendeiner Aktion — in
+Markdown `aktion: x lauf={fortgesetzt}`, in `vorbereitung`, `aktionen` oder `nachbereitung` —,
+ersetzt ihn der Tester beim Aufruf durch wahr oder falsch (§6.4). Der vorbelegte Schlüssel der
+`abbildung` (§7) bleibt gültig.
+
 Dazu `"nachbereitung": [ … ]` an der Wurzel: Aktionen, die der Tester am Ende des Laufs anbietet
 (bei FERTIG und beim Schließen), nie während er auf eine neu startende Anwendung wartet. Beim
 Schließen bietet er sie an, wenn der Lauf eine Bewertung trägt **oder in dieser Sitzung eine Aktion
@@ -424,10 +459,10 @@ alte Läufe lesbar bleiben: `history[]` je Schritt (`:1900–1908`), `setup` und
 **Die Test-DB** (Stufe 3 von §14; mit CS abgestimmt und von Patrik entschieden am 2026-10-10,
 Sync `CS-20261010-1739-…`, im Tester ab `v0.3.5`):
 
-- Der Tester setzt **`test_db.active`** auf `true`, wenn die Aktion aus `test_db` mit `ok`
-  antwortet, und auf `false`, wenn die aus `test_db.ende` mit `ok` antwortet. Die Nachbereitung
-  bietet er unabhängig davon an — bricht der Mensch das Warten im Tester ab, kann das Einrichten
-  in der Anwendung trotzdem fertig werden.
+- **`test_db.active`** ist ab `v0.4.0` abgeleitet: es folgt dem Zustand, den die Nachbereitung aus
+  `test_db.ende` mit `wenn` nennt, sobald die Anwendung ihn je gemeldet hat. Meldet sie keinen
+  (Köpfe S 1.0), gilt die Regel aus `v0.3.5`: `true` nach einem `ok` der Aktion aus `test_db`,
+  `false` nach einem `ok` der aus `test_db.ende`.
 - Damit das stimmt, antwortet `testdb_einrichten` **nie `ok` ohne Test-DB**: `fehler` bei »Nein«,
   bei »Ohne Test-DB« und bei jedem Fehlschlag (die Vorbereitung endet dort, §6.3); `ok` sonst,
   auch beim Rückfall auf SQLite. Zahlen und Probleme des Impfens stehen im Antworttext.
@@ -482,15 +517,25 @@ Entscheid Patrik 2026-10-10): den jüngsten der Liste, **solange er offene Schri
 Kopfzeile sagt es, und der abgeschlossene bleibt unverändert. Sortiert wird nach dem Namen, der
 den Zeitstempel trägt.
 
-Der Block **`build`** des Testlogs (`exe`, `exe_timestamp` als ISO) nennt die Exe, gegen die der
-Lauf lief: die der verbundenen Anwendung aus `hallo`. Ist keine verbunden, bleibt beim Fortsetzen
-stehen, was das Testlog schon nennt — ein im Comm Studio mit der Debug-Exe begonnener Lauf behält
-sie; nur ein neuer Lauf ohne Verbindung nimmt die Exe der Liste oder `start.exe` des Projekts.
+**Der Build hängt am Urteil** (ab `v0.4.0`, Entscheid Patrik 2026-10-10): jeder bewertete Schritt
+trägt `build { exe, exe_timestamp }` vom Zeitpunkt der Bewertung — die Exe der verbundenen
+Anwendung aus `hallo`, sonst die der Liste oder `start.exe` des Projekts; der Stempel ist ISO.
+Wird ein Urteil zurückgenommen, fällt sein `build` weg. Der Block `build` an der Wurzel nennt den
+zuletzt benutzten Build; ohne Verbindung bleibt er beim Fortsetzen stehen, bis wieder bewertet
+wird. Ein Urteil ohne eigenen Stempel (aus einem Lauf vor `v0.4.0` oder aus dem Comm Studio)
+bekommt beim Fortsetzen den, den der Lauf bis dahin an der Wurzel nannte — so bleibt ein Pass vom
+Juni ein Pass gegen den Build vom Juni, auch wenn der Lauf im Oktober weitergeht.
 
-Offen bis Stufe 4 von §14 (Befunde CS B2, B4, B5): der Report des Werkzeugs entsteht bei jedem
-Schreiben und heißt `<lauf>.report.md`, der des Studios erst am Ende und heißt
-`<lauf>.testlog.report.md`; der erzeugte Punkt `V0` steht in `steps[]`; `summary.open` zählt eine
-offene Vorbereitung nicht mit, das Studio schon. Bis dahin wird ein Lauf in dem Tester beendet, in
+**Verwaiste Urteile** (ab `v0.4.0`): Texte, Links, `areas` und die Schrittmenge kommen beim
+Fortsetzen aus der aktuellen Liste. Trägt das Testlog ein Urteil, eine Bemerkung oder Bilder zu
+einem Schritt, den die Liste nicht mehr kennt, bleibt er mit `"verwaist": true` in `steps[]`,
+steht am Ende unter „Nicht mehr in der Liste", lässt sich ansehen, nicht bewerten, und zählt weder
+in der Summe noch im Indikator.
+
+**Regeln fürs Testlog** (Befunde CS B2, B4, B5; seit dem 2026-10-10 Regel, §14.1): ein Report je
+Lauf, `<lauf>.report.md`, bei jedem Schreiben; die erzeugte Vorbereitung `V0` steht in `steps[]`
+als `kind: prep`; `summary.open` zählt Vorbereitungen nie. Der eingebaute Tester des Comm Studio
+hält es an allen drei Stellen anders; solange es ihn gibt, wird ein Lauf in dem Tester beendet, in
 dem er begonnen wurde.
 
 ### 6.5 Ablage
@@ -533,7 +578,7 @@ relativ zur Datei. (Bis `v0.2.0` lag die Datei lose im Repo, und die Pfade galte
     "restart":              "neustart",
     "sql":                  "sql_einfuegen sql",
     "test_db":              "testdb_einrichten name seed fortgesetzt",
-    "test_db.ende":         "testdb_abbauen"
+    "test_db.ende":         "testdb_abbauen wenn=test_db"
   }
 }
 ```
@@ -545,7 +590,7 @@ relativ zur Datei. (Bis `v0.2.0` lag die Datei lose im Repo, und die Pfade galte
 | `start` | wie der Tester die Anwendung startet, **wenn sich in seiner Sitzung noch keine gemeldet hat**. Hatte sich eine gemeldet (Absturz, Neustart), startet er die Exe aus deren `hallo` — sonst holte er nach dem Absturz einer Debug-Exe die Release-Exe | er startet sie nicht, der Mensch tut es |
 | `listen[]` | Listenordner (oder einzelne Listen), je mit `ablage` und optional `muster` (Dateimuster, etwa `"Sichttest_Composer_*.md"` — ohne es nimmt das Werkzeug jede `*.md` mit Schritten). Ein genannter Ordner, den es nicht gibt, wird still übergangen (frischer Klon ohne `.claude/`) | der Root des Projekts; Ablage `sichttest-logs/` im Root |
 | `gewichtung { hand[], git[] }` | Dateien des Nachtest-Indikators in **zwei Schichten**, die verschieden gerechnet werden: `hand` trägt je Bereich `weight`, `changed`, `note`, dazu `retest_steps` und `auto_weight`; `git` trägt `changed`, `commit`, `file` und hebt nur auf `auto_weight` (`TestProtokollWindow.cpp:1026–1083`, `:1148–1170`). Innerhalb einer Schicht gilt die Reihenfolge der Liste. Eine genannte Datei, die fehlt, wird still übergangen (`gitGewichtung.json` ist rechnerlokal). Format und Pflege bleiben bei der Anwendung | kein Indikator |
-| `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2): der Name der Aktion, danach die Schlüssel, die als Argumente unverändert aus dem Feld mitgehen (ein Array wie `seed` bleibt ein Array; was die Zeile nicht nennt, geht nicht mit). `tab` und `sql` gelten auch für die Links `tab://…` und `sql:…` im Text. **Vorbelegt ist der Schlüssel `fortgesetzt`** (ab `v0.3.5`): er ist kein Feld der Liste, der Tester füllt ihn beim Aufruf mit `true`, wenn der Lauf schon eine Bewertung trägt (§6.4), sonst mit `false` | das Feld wird gelesen und als Text gezeigt |
+| `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2): der Name der Aktion, danach die Schlüssel, die als Argumente unverändert aus dem Feld mitgehen (ein Array wie `seed` bleibt ein Array; was die Zeile nicht nennt, geht nicht mit). `tab` und `sql` gelten auch für die Links `tab://…` und `sql:…` im Text. **Vorbelegt ist der Schlüssel `fortgesetzt`** (ab `v0.3.5`): er ist kein Feld der Liste, der Tester füllt ihn beim Aufruf mit `true`, wenn der Lauf schon eine Bewertung trägt (§6.4), sonst mit `false`. Ein Stück `wenn=<zustand>` ist kein Schlüssel: es nennt den Zustand der Anwendung, für den die Aktion da ist (§6.2, ab `v0.4.0`) | das Feld wird gelesen und als Text gezeigt |
 
 Für LumiViz genügt:
 
@@ -814,5 +859,80 @@ Aktionen. Die Ergebnis-DB `testergebnisse.sqlite` ist eine eigene SQLite-Datei
 | 4 | Ergebnis-DB im Schema des Studios weiterschreiben; Nachtest-Indikator, »Unkritische überspringen«, Befund-Archiv, Statistik | **danach kann `TestProtokollWindow` entfallen** |
 | 5 | Protokoll-Register (unbekannt, verschollen, neu lokalisieren) | Komfort |
 
-Das Schema der Ergebnis-DB bleibt, wie es ist; eine Änderung wird vorher mit CS abgestimmt
-(`UART/…/Main.cpp:744–808` prüft es in einem Selbsttest).
+**Stand 2026-10-10:** Stufe 1 seit `v0.2.0`; Stufe 2 seit dem 10.10. im Comm Studio (fünf
+Aktionen, `--testing` gehört dem Werkzeug); Stufe 3 mit `v0.3.5`/`v0.3.6` und im Comm Studio am
+Bildschirm gelaufen. Stufe 4 ist abgestimmt (§14.1); **Teil A ist im Werkzeug gebaut** (S 1.1,
+P 1.1; §3, §4, §6.2, §6.4), im Comm Studio noch nicht, und unveröffentlicht.
+
+### 14.1 Stufe 4 in vier Teilen (abgestimmt mit CS, Entscheide Patrik 2026-10-10)
+
+**Maßstab (Vorgabe Patrik):** nichts wird nur für das Comm Studio gebaut. Was ein Projekt mit
+einer Projektdatei und Listen in der allgemeinen Form hat, bekommt dasselbe. Belege und Wortlaut
+der Abstimmung: Sync `CS-20261010-1926-…`, `SH-20261010-1937-…`.
+
+Je Teil schnürt SH das Paket lokal, das Comm Studio baut über `SICHTTEST_LOCAL_DIR` dagegen
+(§9), dann die Probe am Bildschirm gegen eine Kopie der Ablage. Veröffentlicht wird einmal, wenn
+Stufe 4 fertig ist, als `v0.4.0` (Entscheid Patrik 2026-10-10); bis dahin bleibt der Pin der
+Anwendungen auf `v0.3.6`. Bis Teil D gilt: ein Lauf wird in dem Tester beendet, in
+dem er begonnen wurde.
+
+**Teil A — Testlog und Zustand** (kleine Fassungen **S 1.1** und **P 1.1**; Anwendungen mit S 1.0
+laufen weiter, §5)
+
+- **Zustand der Anwendung:** Die Anwendung meldet benannte Zustände, die sie herstellt und wieder
+  abräumt (`sts_melde_zustand(sitzung, name, steht, text)`), bei jeder Änderung und einmal je
+  Zustand nach dem Verbinden. Der Tester führt den Merker nicht mehr selbst, er leitet ihn ab:
+  `test_db.active` im Testlog ist, was die Anwendung zuletzt gemeldet hat. Eine Nachbereitung
+  nennt mit `"wenn": "<zustand>"` (in der `abbildung` an `test_db.ende`), wofür sie da ist, und
+  wird angeboten, wenn dieser Zustand steht — auch wenn er schon beim Verbinden steht (Rest eines
+  alten Laufs). Ohne `wenn` gilt die Regel aus `v0.3.6`. Verlangt eine Liste einen Zustand, der
+  beim Fortsetzen nicht steht, warnt der Tester.
+- Die Anwendung erfährt das Ende des Testers.
+- **`{fortgesetzt}`** als Wert-Platzhalter, den jede Aktion nennen kann (Markdown, `vorbereitung`,
+  `aktionen`, `abbildung`); der vorbelegte Schlüssel aus `v0.3.5` bleibt gültig.
+- **Regeln fürs Testlog:** die erzeugte Vorbereitung `V0` steht in `steps[]` als `kind: prep`;
+  `summary.open` zählt Vorbereitungen nie; ein Report je Lauf, `<lauf>.report.md`, bei jedem
+  Schreiben (Befunde CS B4, B5, B2).
+- **Der Build-Stempel hängt am Urteil:** jeder bewertete Schritt trägt Exe und Stempel vom
+  Zeitpunkt der Bewertung; `build` an der Wurzel nennt den zuletzt benutzten Build (Befunde B7, L2).
+- **Verwaiste Urteile bleiben:** ein Urteil zu einem Schritt, den es in der Liste nicht mehr gibt,
+  bleibt im Testlog und steht am Ende als „nicht mehr in der Liste"; in Summe und Indikator zählt
+  es nicht.
+
+**Teil B — Ergebnis-DB und Statistik**
+
+- `testergebnisse.sqlite` je Ablage, gespiegelt bei jedem Schreiben; das Testlog bleibt die
+  Wahrheit. Das Schema ist das des Comm Studio (`testlauf`, `testschritt`, `protokoll`,
+  `UART/gui/Comm_Studio/TestResultsDb.cpp:56–90`) mit zwei Änderungen: **`log_datei` trägt den
+  Dateinamen ohne Ordner** (das Werkzeug stellt Bestandszeilen einmalig um), und `testschritt`
+  bekommt ergänzte Spalten für den Build am Urteil. Vorbereitungen werden nicht gespiegelt.
+  Sobald `TestProtokollWindow` entfällt, gehört das Schema dem Werkzeug; Spalten werden nur ergänzt.
+- Der Tester bringt dafür Qt6Sql und das Plugin `qsqlite` mit.
+- Statistik (Läufe je Build, Problemschritte) und das Öffnen eines älteren Laufs.
+
+**Teil C — Nachtest-Indikator**
+
+- Dringlichkeit je Schritt, 0 bis 1: Vorbereitung 0 · in `retest_steps` genannt 1,0 · nie
+  verifiziert 1,0 · letzter Fail 1,0 · sonst das höchste `weight` einer Area des Schritts, die nach
+  dem letzten Pass geändert wurde. `skip` ist nicht verifiziert, `pass_remark` zählt als
+  verifiziert. Die git-Schicht hebt nur auf `auto_weight` (Vorgabe 0,5), nie senkt sie.
+- Verglichen wird gegen den Build-Stempel des Urteils; die Hand-Schicht tut das, wenn `changed`
+  eine Uhrzeit trägt, bei reinem Datum gilt der Tagesvergleich.
+- Schritt-Kennungen gelten je Ablage über alle Listen. Zwei Dateien je Schicht werden
+  verschmolzen, die zweite überlagert die erste je Schlüssel.
+- Schwellen: 🔴 ab 0,7 · 🟡 ab 0,3 · darunter unkritisch. »Unkritische überspringen« nimmt offene
+  Schritte unter 0,3 und lässt sich zurücknehmen, ohne von Hand Übersprungene anzufassen.
+- Im Fenster: Dringlichkeit je Liste in der Listenwahl, Begründung am Schritt.
+- Der git-Hook, der die git-Schicht schreibt, zieht aus dem Comm Studio in dieses Projekt, liest
+  die Pfade aus `gewichtung` der Projektdatei und kommt ins Paket. Das Format beider Dateien wird
+  hier beschrieben, sobald Teil C gebaut ist.
+
+**Teil D — Befund-Archiv**
+
+- `history[]` je Schritt: `{ archived, result, remark, screenshots }`; archiviert wird über einen
+  Knopf und von selbst beim Neubewerten, beim Ändern der Bemerkung und bei einem neuen Screenshot
+  eines schon bewerteten Schritts. Die Bilder bleiben liegen, ihr Zähler läuft über das Archiv
+  weiter. Der Report bekommt den Abschnitt Historie.
+
+**Danach:** derselbe Lauf in beiden Testern, dieselben Zahlen; dann entfernt CS
+`TestProtokollWindow`, `TestResultsDb` und `--resume-log=`.

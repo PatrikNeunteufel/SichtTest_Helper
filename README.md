@@ -209,6 +209,20 @@ Die Nachbereitung einer Liste bietet das Werkzeug an, wenn der letzte Punkt bewe
 beim Schließen — dort auch dann, wenn noch nichts bewertet, aber schon eine Aktion der
 Vorbereitung gelaufen ist.
 
+**Zustände der Anwendung.** Eine Anwendung kann melden, was sie hergestellt hat und was
+davon noch steht (`meldeZustand("test_db", true, "studiotest")` in den Headern). Eine Aktion
+der Nachbereitung nennt mit `"wenn": "test_db"` — in der `abbildung` als
+`"test_db.ende": "testdb_abbauen wenn=test_db"` —, wofür sie da ist. Steht so ein Zustand,
+zeigt das Werkzeug es gleich nach dem Verbinden als Zeile mit dem Knopf **Nachbereitung
+ausführen**, auch wenn er aus einem früheren Lauf übrig ist; das Testlog trägt unter
+`zustaende`, was die Anwendung zuletzt gemeldet hat. Der Wert `{fortgesetzt}` in den
+Argumenten einer Aktion wird beim Aufruf durch wahr oder falsch ersetzt.
+
+**Build am Urteil.** Jeder bewertete Schritt trägt im Testlog `build` mit der Exe und ihrem
+Zeitstempel vom Zeitpunkt der Bewertung; `build` an der Wurzel nennt den zuletzt benutzten.
+Ein Urteil zu einem Schritt, den die Liste nicht mehr kennt, bleibt im Testlog und steht am
+Ende unter „Nicht mehr in der Liste".
+
 ## Was es schreibt
 
 Neben die Liste, in den Unterordner `sichttest-logs/` — oder in die Ablage, die das Projekt

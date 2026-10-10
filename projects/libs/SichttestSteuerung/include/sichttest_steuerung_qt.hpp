@@ -94,6 +94,15 @@ namespace sichttest
         int zustand() const { return m_sitzung->zustand(); }
         // Grund des letzten Fehlschlags; bleibt stehen, bis ein neuer ihn ersetzt (ein Erfolg leert nicht).
         QString letzterFehler() const { return QString::fromStdString(m_sitzung->letzterFehler()); }
+        // Ab S 1.1. Einen benannten Zustand melden, den die Anwendung herstellt und wieder
+        // abräumt (etwa eine Test-Datenbank). Jederzeit, auch vor verbinde().
+        bool meldeZustand(const QString& name, bool steht, const QString& text = {})
+        {
+            return m_sitzung->meldeZustand(name.toUtf8().constData(), steht, text.toUtf8().constData());
+        }
+        // Ab S 1.1. Läuft im GUI-Thread, wenn eine bestehende Verbindung zum Tester endet;
+        // geordnet: der Tester wurde geschlossen (sonst Abriss).
+        void beiEnde(std::function<void(bool geordnet)> ende) { m_sitzung->beiEnde(std::move(ende)); }
         // Fassung der geladenen DLL, etwa für das Log der Anwendung.
         Fassung fassung() const { return m_sitzung->fassung(); }
 

@@ -97,6 +97,9 @@ namespace sichttest
                            && s->hole("sts_letzter_fehler", s->m_f.letzter_fehler)
                            && s->hole("sts_fassung", s->m_f.fassung)
                            && s->hole("sts_schliesse", s->m_f.schliesse);
+            // Ab S 1.1; fehlen sie, ist die DLL älter, und sts_oeffne sagt das gleich in Klartext.
+            s->hole("sts_melde_zustand", s->m_f.melde_zustand);
+            s->hole("sts_bei_ende", s->m_f.bei_ende);
             if (!alle)
             {
                 sage("Der DLL der Sichttest-Steuerung fehlt ein Einstieg: " + utf8(pfad));
@@ -167,6 +170,20 @@ namespace sichttest
         int zustand() const { return m_f.zustand(m_s); }
         // Grund des letzten Fehlschlags; bleibt stehen, bis ein neuer ihn ersetzt (ein Erfolg leert nicht).
         std::string letzterFehler() const { return m_f.letzter_fehler(m_s); }
+        // Ab S 1.1. Einen benannten Zustand melden, den die Anwendung herstellt und wieder
+        // abräumt. Jederzeit, auch vor verbinde(): die DLL merkt sich den letzten Stand je Name
+        // und schickt ihn bei jeder Änderung und nach jedem Verbinden.
+        bool meldeZustand(const char* name, bool steht, const char* text = nullptr)
+        {
+            return m_f.melde_zustand && m_f.melde_zustand(m_s, name, steht ? 1 : 0, text) == STS_OK;
+        }
+        // Ab S 1.1. Wird in pumpe() gerufen, wenn eine bestehende Verbindung zum Tester endet;
+        // geordnet: der Tester wurde geschlossen (sonst Abriss). Danach verbindet nur verbinde() neu.
+        void beiEnde(std::function<void(bool geordnet)> ende)
+        {
+            m_ende = std::move(ende);
+            if (m_f.bei_ende) m_f.bei_ende(m_s, m_ende ? &Sitzung::beende : nullptr, this);
+        }
         // Fassung der geladenen DLL, etwa für das Log der Anwendung.
         Fassung fassung() const
         {
@@ -200,6 +217,8 @@ namespace sichttest
             decltype(&sts_letzter_fehler) letzter_fehler = nullptr;
             decltype(&sts_fassung) fassung = nullptr;
             decltype(&sts_schliesse) schliesse = nullptr;
+            decltype(&sts_melde_zustand) melde_zustand = nullptr;
+            decltype(&sts_bei_ende) bei_ende = nullptr;
         };
 
         static sts_status rufe(void* nutzer, const char*, const char* argumente_json, sts_antwort* antwort)
@@ -227,6 +246,19 @@ namespace sichttest
         {
             auto* s = static_cast<Sitzung*>(nutzer);
             if (s->m_wecker) s->m_wecker();
+        }
+
+        static void beende(void* nutzer, int geordnet)
+        {
+            auto* s = static_cast<Sitzung*>(nutzer);
+            // Über die Grenze der DLL darf nichts geworfen werden.
+            try
+            {
+                if (s->m_ende) s->m_ende(geordnet != 0);
+            }
+            catch (...)
+            {
+            }
         }
 
 #ifdef _WIN32
@@ -264,6 +296,7 @@ namespace sichttest
         sts_sitzung* m_s = nullptr;
         std::list<Eintrag> m_aktionen;  // Liste: die Adressen der Einträge bleiben gültig
         std::function<void()> m_wecker;
+        std::function<void(bool)> m_ende;
     };
 }
 
