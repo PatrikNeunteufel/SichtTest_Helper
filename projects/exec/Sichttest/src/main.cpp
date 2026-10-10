@@ -1358,7 +1358,16 @@ namespace
                     beendeLauf({});
                     return;
                 }
-                const QJsonObject a = m_lauf.liste.at(m_lauf.pos).toObject();
+                QJsonObject a = m_lauf.liste.at(m_lauf.pos).toObject();
+                // Aus der Abbildung des Projekts: der vorbelegte Schlüssel "fortgesetzt" sagt der
+                // Anwendung, ob der Lauf schon eine Bewertung trägt (§6.4, §7).
+                QJsonObject mit = a.value(QStringLiteral("mit")).toObject();
+                if (a.contains(QStringLiteral("feld")) && mit.contains(QStringLiteral("fortgesetzt")))
+                {
+                    mit.insert(QStringLiteral("fortgesetzt"), m_lauf.fortsetzen);
+                    a.insert(QStringLiteral("mit"), mit);
+                    m_lauf.liste.replace(m_lauf.pos, a);
+                }
                 const QString name = a.value(QStringLiteral("aktion")).toString();
                 const Steuerung::Anwendung* app = m_steuerung.anwendung(m_p.anwendung);
                 if (!app)
@@ -1411,6 +1420,14 @@ namespace
             {
                 beendeLauf(text.isEmpty() ? status : text);
                 return;
+            }
+            // test_db.active (Testlog): die Test-DB steht nach einem ok des Einrichtens und ist
+            // nach einem ok des Abbauens weg — die Anwendung antwortet nie ok ohne Test-DB.
+            if (status == QLatin1String("ok") && !m_p.testDb.isEmpty())
+            {
+                const QString feld = a.value(QStringLiteral("feld")).toString();
+                if (feld == QLatin1String("test_db")) m_p.testDb.insert(QStringLiteral("active"), true);
+                else if (feld == QLatin1String("test_db.ende")) m_p.testDb.insert(QStringLiteral("active"), false);
             }
             if (m_lauf.beendet) m_endeDurchAktion = true;
             ++m_lauf.pos;
@@ -1763,7 +1780,7 @@ namespace
                       { QStringLiteral("tab"), QStringLiteral("echo titel") },
                       { QStringLiteral("restart"), QStringLiteral("ende") },
                       { QStringLiteral("sql"), QStringLiteral("echo sql") },
-                      { QStringLiteral("test_db"), QStringLiteral("echo name seed") },
+                      { QStringLiteral("test_db"), QStringLiteral("echo name seed fortgesetzt") },
                       { QStringLiteral("test_db.ende"), QStringLiteral("echo") } } } };
             const QString projektDatei = wurzel.filePath(QStringLiteral(".sichttest/sichttest.projekt.json"));
             const QString studio = wurzel.filePath(QStringLiteral("listen/studio.testprotokoll.json"));
@@ -1852,6 +1869,10 @@ namespace
                    && text(log, 0).contains(QLatin1String("\"projekt\":\"P\"")) && text(log, 0).contains(QLatin1String("studiotest"))
                    && text(log, 2).contains(QLatin1String("examples/demo.project.json")),
                    QStringLiteral("Vorbereitung: Test-DB (mit seed) zuerst, dann Tabs schließen, dann öffnen"));
+            pruefe(text(log, 0).contains(QLatin1String("\"fortgesetzt\":false"))
+                   && !text(log, 2).contains(QLatin1String("fortgesetzt"))
+                   && m_p.testDb.value(QStringLiteral("active")).toBool(),
+                   QStringLiteral("Test-DB: der vorbelegte Schlüssel fortgesetzt ist im neuen Lauf false; nach ok steht test_db.active"));
 
             m_ohneZwischenablage = true;
             zeige(findeSchritt(QStringLiteral("s-01")));
@@ -1874,6 +1895,20 @@ namespace
                    && aufPlatte.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("name")).toString() == QLatin1String("studiotest")
                    && aufPlatte.value(QStringLiteral("steps")).toArray().at(2).toObject().value(QStringLiteral("areas")).toArray().size() == 2,
                    QStringLiteral("Testlog liegt in der Ablage des Projekts und trägt setup, test_db, areas und teardown_actions"));
+            pruefe(aufPlatte.value(QStringLiteral("test_db")).toObject().contains(QStringLiteral("active"))
+                   && !aufPlatte.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("active")).toBool(),
+                   QStringLiteral("Test-DB: nach dem ok der Nachbereitung steht test_db.active im Testlog auf false"));
+
+            // Mit einer Bewertung gilt der Lauf als fortgesetzt; die Anwendung erfährt es.
+            zeige(findeSchritt(QStringLiteral("s-01")));
+            klicke(QStringLiteral("✓ Pass"));
+            zeige(v0);
+            klicke(QStringLiteral("▶ Ausführen"));
+            warteBis([&] { return !m_lauf.aktiv; }, 15000);
+            log = ausgeloest(QStringLiteral("V0"));
+            pruefe(log.size() == 6 && text(log, 3).contains(QLatin1String("\"fortgesetzt\":true"))
+                   && leseJson(m_logPfad).value(QStringLiteral("test_db")).toObject().value(QStringLiteral("active")).toBool(),
+                   QStringLiteral("Test-DB: nach einer Bewertung ist fortgesetzt true; test_db.active steht wieder"));
 
             zeige(findeSchritt(QStringLiteral("s-02")));
             klicke(QStringLiteral("▶ Herstellen"));

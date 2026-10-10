@@ -8,7 +8,9 @@
 > die Fassung der geladenen DLL (§8), seit `v0.3.2` hat die Rückfrage einen Haken (§3) und der
 > Tester bietet nach dem Ende der Anwendung das Beenden an (§4), seit `v0.3.3` trägt das Testlog
 > den Block `steuerung` (§5), seit `v0.3.4` wird ein abgeschlossener Lauf nicht mehr fortgesetzt,
-> und `build` bleibt beim Fortsetzen erhalten (§6.4). Die Festlegungen, die beim
+> und `build` bleibt beim Fortsetzen erhalten (§6.4), seit `v0.3.5` setzt der Tester
+> `test_db.active`, füllt den Schlüssel `fortgesetzt` (§6.2, §7) und erlaubt der Anwendung den
+> Vordergrund (§4). Die Festlegungen, die beim
 > Bauen fielen (im Sync SH-15), stehen seit dem 2026-10-09 in §3, §4, §6 und §7, jeweils mit
 > „beim Bauen festgelegt" gekennzeichnet. Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
 > Gezählt wird hier nach §13; im Sync heißen dieselben Abschnitte nach der Freigabe „3 und 4"
@@ -106,7 +108,7 @@ typedef struct {
 /* Fassungen der DLL, ohne Sitzung abfragbar. */
 void       sts_fassung(uint16_t* s_major, uint16_t* s_minor,
                        uint16_t* p_major_min, uint16_t* p_major_max,
-                       const char** produkt);                 /* "0.3.4" = Tag des Repos ohne v */
+                       const char** produkt);                 /* "0.3.5" = Tag des Repos ohne v */
 
 /* Sitzung anlegen; prüft S (§5). Öffnet noch nichts. Scheitert es, gibt es keine Sitzung;
    den Grund nennt dann sts_letzter_fehler(NULL). */
@@ -278,13 +280,17 @@ Der Tester wartet je Aufruf 10 s (in der Liste je Aktion änderbar); für Aktion
 `STS_WARTET_AUF_MENSCH` gilt keine Frist (§3). Bleibt die Antwort aus, gilt §6.3: der Handgriff
 erscheint als Text, eine verspätete Antwort wird verworfen.
 
+**Vordergrund (ab `v0.3.5`, Hinweis CS):** Vor jedem Aufruf erlaubt der Tester der Anwendung,
+sich nach vorn zu holen (`AllowSetForegroundWindow` mit der `pid` aus `hallo`) — sonst bliebe ein
+Dialog der Aktion hinter dem Tester. Nach vorn holen muss sich die Anwendung selbst.
+
 ## 5. Drei Nummern, zwei davon werden geprüft
 
 | Nummer | Wo sie steht | Wann geprüft | Von wem |
 |---|---|---|---|
 | **P** — Protokoll Tester ↔ DLL, `groß.klein` | in Tester und DLL einkompiliert | beim Verbinden (`hallo`) | Tester |
 | **S** — Schnittstelle DLL ↔ Anwendung, `groß.klein` | `STS_S_MAJOR/MINOR` im Kopf, also in der Anwendung; in der DLL; die große Nummer zusätzlich **im Dateinamen** `SichttestSteuerung1.dll` | beim Laden (`sts_oeffne`) | DLL |
-| **Produkt** — Tag des Repos, etwa `v0.3.4` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
+| **Produkt** — Tag des Repos, etwa `v0.3.5` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
 
 **Was die große, was die kleine Nummer ändert**
 
@@ -410,6 +416,24 @@ Studio. Einrichten und Abbauen der Test-DB samt aller Rückfragen bleiben im Stu
 alte Läufe lesbar bleiben: `history[]` je Schritt (`:1900–1908`), `setup` und `test_db` samt
 `test_db.active` an der Wurzel, `pass_remark` in der Zusammenfassung.
 
+**Die Test-DB** (Stufe 3 von §14; mit CS abgestimmt und von Patrik entschieden am 2026-10-10,
+Sync `CS-20261010-1739-…`, im Tester ab `v0.3.5`):
+
+- Der Tester setzt **`test_db.active`** auf `true`, wenn die Aktion aus `test_db` mit `ok`
+  antwortet, und auf `false`, wenn die aus `test_db.ende` mit `ok` antwortet. Die Nachbereitung
+  bietet er unabhängig davon an — bricht der Mensch das Warten im Tester ab, kann das Einrichten
+  in der Anwendung trotzdem fertig werden.
+- Damit das stimmt, antwortet `testdb_einrichten` **nie `ok` ohne Test-DB**: `fehler` bei »Nein«,
+  bei »Ohne Test-DB« und bei jedem Fehlschlag (die Vorbereitung endet dort, §6.3); `ok` sonst,
+  auch beim Rückfall auf SQLite. Zahlen und Probleme des Impfens stehen im Antworttext.
+- `testdb_abbauen` fragt nicht selbst (der Tester fragt vor der Nachbereitung); ohne aktive
+  Test-DB antwortet es `ok`. Klemmt das Wegräumen, bleibt es bei `ok` mit dem Problem im Text —
+  die ursprüngliche Verbindung ist dann wiederhergestellt.
+- Über den vorbelegten Schlüssel **`fortgesetzt`** (§7) erfährt `testdb_einrichten`, ob der Lauf
+  fortgesetzt wird: dann verwendet das Studio eine aktive Test-DB still weiter, ohne erneutes
+  Impfen. Bei einem neuen Lauf mit noch aktiver Test-DB fragt es „frisch oder weiterverwenden".
+- Die Test-DB bleibt über `neustart` eingestellt; verbunden wird im Studio, nicht im Tester.
+
 ### 6.3 Unbekannte Aktion, keine Verbindung, Fehler
 
 Für alle Fälle dieselbe Regel: **der Lauf hält nie an, der Handgriff erscheint als Text.**
@@ -503,7 +527,7 @@ relativ zur Datei. (Bis `v0.2.0` lag die Datei lose im Repo, und die Pfade galte
     "tab":                  "tab_zeigen titel",
     "restart":              "neustart",
     "sql":                  "sql_einfuegen sql",
-    "test_db":              "testdb_einrichten name seed",
+    "test_db":              "testdb_einrichten name seed fortgesetzt",
     "test_db.ende":         "testdb_abbauen"
   }
 }
@@ -516,7 +540,7 @@ relativ zur Datei. (Bis `v0.2.0` lag die Datei lose im Repo, und die Pfade galte
 | `start` | wie der Tester die Anwendung startet, **wenn sich in seiner Sitzung noch keine gemeldet hat**. Hatte sich eine gemeldet (Absturz, Neustart), startet er die Exe aus deren `hallo` — sonst holte er nach dem Absturz einer Debug-Exe die Release-Exe | er startet sie nicht, der Mensch tut es |
 | `listen[]` | Listenordner (oder einzelne Listen), je mit `ablage` und optional `muster` (Dateimuster, etwa `"Sichttest_Composer_*.md"` — ohne es nimmt das Werkzeug jede `*.md` mit Schritten). Ein genannter Ordner, den es nicht gibt, wird still übergangen (frischer Klon ohne `.claude/`) | der Root des Projekts; Ablage `sichttest-logs/` im Root |
 | `gewichtung { hand[], git[] }` | Dateien des Nachtest-Indikators in **zwei Schichten**, die verschieden gerechnet werden: `hand` trägt je Bereich `weight`, `changed`, `note`, dazu `retest_steps` und `auto_weight`; `git` trägt `changed`, `commit`, `file` und hebt nur auf `auto_weight` (`TestProtokollWindow.cpp:1026–1083`, `:1148–1170`). Innerhalb einer Schicht gilt die Reihenfolge der Liste. Eine genannte Datei, die fehlt, wird still übergangen (`gitGewichtung.json` ist rechnerlokal). Format und Pflege bleiben bei der Anwendung | kein Indikator |
-| `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2); `tab` und `sql` gelten auch für die Links `tab://…` und `sql:…` im Text | das Feld wird gelesen und als Text gezeigt |
+| `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2): der Name der Aktion, danach die Schlüssel, die als Argumente unverändert aus dem Feld mitgehen (ein Array wie `seed` bleibt ein Array; was die Zeile nicht nennt, geht nicht mit). `tab` und `sql` gelten auch für die Links `tab://…` und `sql:…` im Text. **Vorbelegt ist der Schlüssel `fortgesetzt`** (ab `v0.3.5`): er ist kein Feld der Liste, der Tester füllt ihn beim Aufruf mit `true`, wenn der Lauf schon eine Bewertung trägt (§6.4), sonst mit `false` | das Feld wird gelesen und als Text gezeigt |
 
 Für LumiViz genügt:
 
@@ -625,7 +649,7 @@ sichttest-vX.Y.Z-win64/
 ├── include/   sichttest_steuerung.h · sichttest_steuerung.hpp · sichttest_steuerung_qt.hpp
 ├── bin/       SichttestSteuerung1.dll
 ├── sichttest/ Sichttest.exe mit seinem Qt
-└── VERSION    drei Zeilen: produkt=0.3.4 · s=1.0 · p=1
+└── VERSION    drei Zeilen: produkt=0.3.5 · s=1.0 · p=1
 ```
 
 Gebaut wird das Paket nur als Release, ohne `.pdb`. Verbindlich stehen S und P im Kopf
@@ -640,7 +664,7 @@ beim Bauen als Define `STS_PRODUKT` aus `Solution.json`, die Anwendung fragt sie
 sich mit jedem Schnüren, auch bei gleichem Inhalt:
 
 ```cmake
-set(SICHTTEST_VERSION "v0.3.4")
+set(SICHTTEST_VERSION "v0.3.5")
 set(SICHTTEST_URL     "https://github.com/PatrikNeunteufel/SichtTest_Helper/releases/download/${SICHTTEST_VERSION}/sichttest-${SICHTTEST_VERSION}-win64.zip")
 set(SICHTTEST_SHA256  "<64 Hex-Zeichen>")
 set(SICHTTEST_FALLBACK_PATHS "../SichtTest_Helper/out/package")

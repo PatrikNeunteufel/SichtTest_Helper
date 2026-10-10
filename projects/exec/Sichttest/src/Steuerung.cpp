@@ -16,6 +16,10 @@
 
 #include <memory>
 
+#ifdef Q_OS_WIN
+#  include <qt_windows.h>
+#endif
+
 namespace sichttest
 {
     namespace
@@ -219,6 +223,11 @@ namespace sichttest
             if (fertig) fertig(QStringLiteral("getrennt"), QStringLiteral("keine Anwendung verbunden"));
             return;
         }
+#ifdef Q_OS_WIN
+        // Die Aktion darf ihr Fenster oder einen Dialog nach vorn holen; ohne diese Erlaubnis
+        // ließe Windows die Anwendung hinter dem Tester (Hinweis CS). Scheitert es, bleibt es dabei.
+        AllowSetForegroundWindow(static_cast<DWORD>(m_verbindungen.value(s).app.pid));
+#endif
         Auftrag a;
         a.id = m_naechsteId++;
         a.fristMs = fristMs;

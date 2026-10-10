@@ -195,6 +195,16 @@ Nachbereitung der Liste), `tab` und `restart` (am Schritt), dazu die Links `tab:
 Aktion ein Feld auslöst, bestimmt allein die Projektdatei; das Werkzeug kennt keine
 Aktionsnamen irgendeiner Anwendung.
 
+Eine Zeile der `abbildung` nennt nach dem Namen der Aktion die Schlüssel, die als Argumente
+mitgehen (`"test_db": "testdb_einrichten name seed"`); sie kommen unverändert aus dem Feld der
+Liste. Der Schlüssel **`fortgesetzt`** ist vorbelegt: ihn füllt das Werkzeug beim Aufruf mit
+`true`, wenn der Lauf schon eine Bewertung trägt, sonst mit `false`. Antwortet die Aktion aus
+`test_db` mit `ok`, steht im Testlog `test_db.active: true`; nach einem `ok` der Aktion aus
+`test_db.ende` steht es auf `false`.
+
+Vor jedem Aufruf erlaubt das Werkzeug der Anwendung, ihr Fenster oder einen Dialog nach vorn
+zu holen.
+
 ## Was es schreibt
 
 Neben die Liste, in den Unterordner `sichttest-logs/` — oder in die Ablage, die das Projekt

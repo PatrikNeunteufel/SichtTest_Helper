@@ -347,10 +347,12 @@ namespace sichttest
             QString aktion;
             QStringList schluessel;
             if (!abbildung(projekt(), QLatin1String(feld), aktion, schluessel)) return QJsonObject();
+            // "fortgesetzt" ist vorbelegt: kein Feld der Liste, der Tester füllt es beim Aufruf (§7).
             QJsonObject mit;
-            for (const QString& k : std::as_const(schluessel)) mit.insert(k, wert(k));
+            for (const QString& k : std::as_const(schluessel))
+                mit.insert(k, k == QLatin1String("fortgesetzt") ? QJsonValue(false) : wert(k));
             return QJsonObject{ { QStringLiteral("aktion"), aktion }, { QStringLiteral("mit"), mit },
-                                { QStringLiteral("text"), text } };
+                                { QStringLiteral("text"), text }, { QStringLiteral("feld"), QLatin1String(feld) } };
         };
 
         // Die Test-DB zuerst: die Tabs aus "setup" fragen beim Öffnen schon die Datenbank ab.
