@@ -861,7 +861,7 @@ Aktionen. Die Ergebnis-DB `testergebnisse.sqlite` ist eine eigene SQLite-Datei
 
 **Stand 2026-10-10:** Stufe 1 seit `v0.2.0`; Stufe 2 seit dem 10.10. im Comm Studio (fünf
 Aktionen, `--testing` gehört dem Werkzeug); Stufe 3 mit `v0.3.5`/`v0.3.6` und im Comm Studio am
-Bildschirm gelaufen. Stufe 4 ist abgestimmt (§14.1); **die Teile A, B und C sind gebaut**, A
+Bildschirm gelaufen. Stufe 4 ist abgestimmt (§14.1); **alle vier Teile A bis D sind gebaut**, A
 auch im Comm Studio und dort am Bildschirm gelaufen (S 1.1, P 1.1; §3, §4, §6.2, §6.4); alles
 unveröffentlicht.
 
@@ -922,8 +922,8 @@ nichts an; er steht einmal im Fenster.
 Die **Statistik** ist ein eigenes Fenster (Knopf **Statistik…**), kein Reiter, damit das
 Testfenster schmal bleibt (Entscheid Patrik). Ein **älterer Lauf** öffnet daraus **nur zum
 Ansehen**: nichts wird geschrieben, weder Testlog noch DB. Hat er offene Schritte, macht
-**Diesen Lauf fortsetzen** ihn bearbeitbar; abgeschlossene Läufe werden erst mit Teil D wieder
-bearbeitbar, weil bis dahin kein Befund-Archiv ein überschriebenes Urteil aufhebt.
+**Diesen Lauf fortsetzen** ihn bearbeitbar; abgeschlossene Läufe sind es seit Teil D (siehe
+dort), weil erst das Befund-Archiv einen überschriebenen Befund aufhebt.
 
 **Teil C — Nachtest-Indikator**
 
@@ -972,9 +972,29 @@ sagt es die Kopfzeile (Befund CS B7).
 **Teil D — Befund-Archiv**
 
 - `history[]` je Schritt: `{ archived, result, remark, screenshots }`; archiviert wird über einen
-  Knopf und von selbst beim Neubewerten, beim Ändern der Bemerkung und bei einem neuen Screenshot
-  eines schon bewerteten Schritts. Die Bilder bleiben liegen, ihr Zähler läuft über das Archiv
-  weiter. Der Report bekommt den Abschnitt Historie.
+  Knopf und von selbst, wenn sich die Bemerkung eines schon bewerteten Schritts ändert — beim
+  Neubewerten, beim Sichern der Bemerkung und vor einem neuen Screenshot — oder sein Urteil
+  einem anderen weicht. Die Bilder bleiben
+  liegen, ihr Zähler läuft über das Archiv weiter. Der Report bekommt den Abschnitt Historie.
+
+Gebaut (2026-10-10) nach dem Quelltext des Comm Studio (`UART/gui/Comm_Studio/
+TestProtokollWindow.cpp:1773–1840`, `TestResultsDb.cpp:370–402`). Ein Eintrag trägt über dessen
+Format hinaus `rated` und `build` des archivierten Urteils. **🗄 Archivieren** nimmt den Befund,
+wie er im Feld steht, leert Bemerkung und Bilder und lässt das Urteil stehen; ohne Bemerkung und
+Bild gibt es nichts zu archivieren. **Von selbst** bei geändertem Text (ohne Rand verglichen)
+an einem Schritt, der nicht offen ist. Dazu, über das Comm Studio hinaus (Entscheid Patrik
+2026-10-10), bei jedem Wechsel eines Urteils in ein anderes: der Eintrag trägt dann Urteil,
+`rated`, `build` und die Bemerkung des alten Stands, auch wenn sie leer ist, und keine Bilder;
+Bemerkung und Bilder bleiben am Schritt, solange der Text gleich bleibt. Das gilt auch beim
+Zurücknehmen auf offen (beim Bauen festgelegt — sonst ginge das Urteil über zwei Klicks doch
+verloren). Hat die geänderte Bemerkung den alten Befund schon abgeheftet, entsteht kein zweiter
+Eintrag. Ein Bild allein und dasselbe Urteil noch einmal archivieren nichts. Das nächste Bild
+bekommt eine Nummer über der höchsten, die der Schritt je trug, auch im Archiv. Am Schritt steht
+eine Zeile mit den jüngsten zwei Einträgen, alle im Tooltip; der Report nennt je Schritt alle,
+den jüngsten zuerst. Die Ergebnis-DB spiegelt `history` wie bisher.
+
+Damit ist ein **abgeschlossener Lauf** aus dem Ansehen heraus bearbeitbar (**Diesen Lauf
+bearbeiten**); die Kopfzeile nennt ihn „wieder geöffnet".
 
 **Danach:** derselbe Lauf in beiden Testern, dieselben Zahlen; dann entfernt CS
 `TestProtokollWindow`, `TestResultsDb` und `--resume-log=`.

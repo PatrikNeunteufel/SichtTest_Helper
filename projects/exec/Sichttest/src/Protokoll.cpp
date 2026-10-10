@@ -568,6 +568,60 @@ namespace sichttest
         return QStringLiteral("○");
     }
 
+    namespace
+    {
+        // Ein Eintrag für history[]: der Stand von `von`, mit den genannten Bildern.
+        void hefteAb(QJsonObject& schritt, const QJsonObject& von, const QJsonArray& bilder)
+        {
+            QJsonObject eintrag{
+                { QStringLiteral("archived"), QDateTime::currentDateTime().toString(Qt::ISODate) },
+                { QStringLiteral("result"), von.value(QStringLiteral("result")).toString() },
+                { QStringLiteral("remark"), von.value(QStringLiteral("remark")).toString() },
+                { QStringLiteral("screenshots"), bilder } };
+            // Über das Format des Comm Studio hinaus: wann und gegen welchen Build geurteilt wurde.
+            for (const char* feld : { "rated", "build" })
+                if (von.contains(QLatin1String(feld)))
+                    eintrag.insert(QLatin1String(feld), von.value(QLatin1String(feld)));
+            QJsonArray archiv = schritt.value(QStringLiteral("history")).toArray();
+            archiv.append(eintrag);
+            schritt.insert(QStringLiteral("history"), archiv);
+        }
+    }
+
+    bool archiviere(QJsonObject& schritt)
+    {
+        const QJsonArray bilder = schritt.value(QStringLiteral("screenshots")).toArray();
+        if (schritt.value(QStringLiteral("remark")).toString().trimmed().isEmpty() && bilder.isEmpty()) return false;
+        hefteAb(schritt, schritt, bilder);
+        schritt.insert(QStringLiteral("remark"), QString());
+        schritt.insert(QStringLiteral("screenshots"), QJsonArray());
+        return true;
+    }
+
+    void archiviereUrteil(QJsonObject& schritt, const QJsonObject& vorher)
+    {
+        hefteAb(schritt, vorher, {});
+    }
+
+    int naechsteBildNummer(const QJsonObject& schritt)
+    {
+        int hoechste = 0;
+        auto suche = [&hoechste](const QJsonArray& bilder) {
+            for (const QJsonValue& b : bilder)
+            {
+                const QString stamm = QFileInfo(b.toString()).completeBaseName();
+                bool zahl = false;
+                const int n = stamm.mid(stamm.lastIndexOf(QLatin1Char('_')) + 1).toInt(&zahl);
+                if (zahl && n > hoechste) hoechste = n;
+            }
+        };
+        suche(schritt.value(QStringLiteral("screenshots")).toArray());
+        const QJsonArray archiv = schritt.value(QStringLiteral("history")).toArray();
+        for (const QJsonValue& h : archiv)
+            suche(h.toObject().value(QStringLiteral("screenshots")).toArray());
+        return hoechste + 1;
+    }
+
     QJsonObject alsLog(const Protokoll& protokoll, const QString& gestartet)
     {
         const Zaehler z = zaehle(protokoll.schritte);
@@ -660,6 +714,31 @@ namespace sichttest
         liste(QStringLiteral("skip"), QStringLiteral("↷ Übersprungen"));
         liste(QStringLiteral("open"), QStringLiteral("○ Offen"));
         liste(QStringLiteral("pass"), QStringLiteral("✓ Pass"));
+
+        // Befund-Archiv (§14.1 Teil D): frühere Befunde je Schritt, der jüngste zuerst.
+        bool erster = true;
+        for (const QJsonValue& v : protokoll.schritte)
+        {
+            const QJsonObject s = v.toObject();
+            const QJsonArray archiv = s.value(QStringLiteral("history")).toArray();
+            if (archiv.isEmpty()) continue;
+            if (erster) { r += QStringLiteral("\n## 🗄 Historie (archivierte Befunde)\n"); erster = false; }
+            r += QStringLiteral("\n### %1 %2 (jetzt: %3)\n")
+                     .arg(s.value(QStringLiteral("id")).toString(), s.value(QStringLiteral("title")).toString(),
+                          zeichen(s.value(QStringLiteral("result")).toString()));
+            for (int n = int(archiv.size()) - 1; n >= 0; --n)
+            {
+                const QJsonObject h = archiv.at(n).toObject();
+                r += QStringLiteral("\n**%1** [%2]\n\n")
+                         .arg(h.value(QStringLiteral("archived")).toString().left(16).replace(QLatin1Char('T'), QLatin1Char(' ')),
+                              zeichen(h.value(QStringLiteral("result")).toString()));
+                const QString bemerkung = h.value(QStringLiteral("remark")).toString().trimmed();
+                r += (bemerkung.isEmpty() ? QStringLiteral("(keine Bemerkung)") : bemerkung) + QStringLiteral("\n");
+                const QJsonArray bilder = h.value(QStringLiteral("screenshots")).toArray();
+                for (const QJsonValue& b : bilder)
+                    r += QStringLiteral("\n![%1](%1)\n").arg(b.toString());
+            }
+        }
         return r;
     }
 

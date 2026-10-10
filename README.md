@@ -288,9 +288,22 @@ derselbe Knopf nimmt genau diese wieder auf, von Hand Übersprungene bleiben.
 die Problemschritte zuerst. Es bleibt offen und frischt sich bei jedem Schreiben auf.
 
 **Lauf öffnen** (oder ein Doppelklick) zeigt einen älteren Lauf im Hauptfenster, **nur zum
-Ansehen**: Urteile, Bemerkungen und Bilder sind da, geschrieben wird nichts. Hat er noch offene
-Schritte, macht **Diesen Lauf fortsetzen** ihn bearbeitbar; **Zurück zum aktuellen Lauf** führt
-zurück.
+Ansehen**: Urteile, Bemerkungen und Bilder sind da, geschrieben wird nichts. **Diesen Lauf
+fortsetzen** macht ihn bearbeitbar; bei einem abgeschlossenen Lauf heißt der Knopf **Diesen Lauf
+bearbeiten**. **Zurück zum aktuellen Lauf** führt zurück.
+
+## Befund-Archiv
+
+Jeder Schritt führt eine Historie seiner Befunde. **🗄 Archivieren** heftet Bemerkung und
+Screenshots mit Zeitpunkt, Urteil und Build ab und leert das Feld für den nächsten Befund; das
+Urteil bleibt. Von selbst geschieht das, wenn sich die Bemerkung eines schon bewerteten Schritts
+ändert — beim Neubewerten, beim Weiterblättern, vor einem neuen Screenshot. Weicht ein Urteil
+einem anderen (oder wird es zurückgenommen) und die Bemerkung bleibt gleich, steht das alte
+Urteil mit seinem Build in der Historie; Bemerkung und Screenshots bleiben am Schritt.
+
+Die archivierten Befunde stehen in einer Zeile unter den Screenshots (der jüngste zuerst, alle
+im Tooltip), im Testlog unter `history` des Schritts und im Report im Abschnitt **Historie**.
+Die Bilddateien bleiben liegen; ein neues Bild bekommt die nächste freie Nummer.
 
 ## Bedienung
 
@@ -300,6 +313,7 @@ zurück.
 | Bewertung zurücknehmen | ○ Offen |
 | Screenshot | Win+Shift+S, dann **📋 Screenshot anhängen**, Strg+Shift+V oder Strg+V im Bemerkungsfeld; Bilddateien ins Fenster ziehen |
 | Screenshot ansehen / löschen | Maus darüber (Vorschau), Doppelklick öffnet, Entf oder Rechtsklick löscht |
+| Befund abheften, Feld leeren | **🗄 Archivieren** |
 | Fenster über dem Programm halten | Haken **Im Vordergrund** |
 | nur das Unerledigte | Haken **Nur offene und Fail zeigen** |
 | Befunde weitergeben | **Report-Pfad kopieren** und im Chat einfügen |
@@ -307,8 +321,6 @@ zurück.
 Fail und Pass mit Befund verlangen eine Bemerkung oder einen Screenshot.
 
 ## Was das Werkzeug noch nicht kann
-
-Ein Befund-Archiv je Schritt. Geplant ist das in `docs/Konzept_Steuerung.md` §14.1.
 
 Gebaut und geprüft ist nur Windows; die Steuerung gibt es nur dort.
 

@@ -86,6 +86,18 @@ namespace sichttest
     Zaehler zaehle(const QJsonArray& schritte);
     QString zeichen(const QString& ergebnis);
 
+    // --- Befund-Archiv (Konzept §14.1 Teil D) --------------------------------
+    // Bemerkung und Bilder des Schritts wandern mit Zeitpunkt, Urteil und dessen Build nach
+    // history[]; das Feld wird frei, das Urteil bleibt. false = es gab nichts zu archivieren.
+    // Die Bilddateien bleiben liegen.
+    bool archiviere(QJsonObject& schritt);
+    // Ein Urteil wird durch ein anderes ersetzt, ohne dass ein Befund abgeheftet wurde: Urteil,
+    // dessen Build und die Bemerkung von `vorher` nach history[], ohne Bilder. Am Schritt bleibt
+    // alles stehen.
+    void archiviereUrteil(QJsonObject& schritt, const QJsonObject& vorher);
+    // Nummer des nächsten Bilds: eine über der höchsten, die der Schritt je trug — auch im Archiv.
+    int naechsteBildNummer(const QJsonObject& schritt);
+
     QJsonObject alsLog(const Protokoll& protokoll, const QString& gestartet);
     QString alsReport(const Protokoll& protokoll, const QString& gestartet,
                       const QString& exeZeit);

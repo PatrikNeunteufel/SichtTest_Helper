@@ -268,6 +268,7 @@ namespace
 
             selbsttestBuild(d, pruefe, klicke);
             selbsttestErgebnis(d, pruefe, klicke);
+            selbsttestArchiv(d, pruefe, klicke);
             selbsttestIndikator(d, pruefe, klicke);
             selbsttestListen(d, pruefe);
 #ifdef Q_OS_WIN
@@ -422,7 +423,20 @@ namespace
             loesche->setShortcutContext(Qt::WidgetShortcut);
             m_bilder->addAction(loesche);
             bildZeile->addWidget(m_bilder, 1);
+            // Befund-Archiv (§14.1 Teil D).
+            m_archivBtn = new QPushButton(QStringLiteral("🗄 Archivieren"), rechts);
+            m_archivBtn->setToolTip(QStringLiteral(
+                "Heftet Bemerkung und Screenshots mit Zeitpunkt und Urteil in die Historie dieses Schritts "
+                "und leert das Feld für den nächsten Befund. Das Urteil bleibt. Ändert sich die Bemerkung "
+                "eines schon bewerteten Schritts, geschieht das von selbst."));
+            bildZeile->addWidget(m_archivBtn);
             col->addLayout(bildZeile);
+            m_historie = new QLabel(rechts);
+            m_historie->setWordWrap(true);
+            m_historie->setStyleSheet(QStringLiteral("color:#8a8a8a;"));
+            m_historie->hide();
+            col->addWidget(m_historie);
+            connect(m_archivBtn, &QPushButton::clicked, this, [this]() { archiviereBefund(); });
 
             // Aktionen des Punkts (Konzept §6): laufen nie von selbst, nur auf den Knopf.
             auto* aktionsZeile = new QHBoxLayout();
@@ -972,16 +986,18 @@ namespace
             m_ansehenText->setText(offen
                 ? QStringLiteral("Älterer Lauf vom %1 — nur zum Ansehen, es wird nichts geschrieben.").arg(m_gestartet)
                 : QStringLiteral("Abgeschlossener Lauf vom %1 — nur zum Ansehen, es wird nichts geschrieben.").arg(m_gestartet));
-            m_fortsetzenBtn->setVisible(offen);
+            m_fortsetzenBtn->setText(offen ? QStringLiteral("Diesen Lauf fortsetzen") : QStringLiteral("Diesen Lauf bearbeiten"));
         }
 
-        // Aus dem Ansehen heraus: einen Lauf mit offenen Schritten wieder bearbeiten.
+        // Aus dem Ansehen heraus: den Lauf wieder bearbeiten. Auch einen abgeschlossenen — was
+        // dabei überschrieben würde, hebt das Befund-Archiv auf (§14.1 Teil D).
         void setzeFort()
         {
-            if (!m_nurAnsehen || zaehle(m_p.schritte).offen == 0) return;
+            if (!m_nurAnsehen) return;
             m_nurAnsehen = false;
             QString kopf = m_kopfzeile->text();
-            kopf.replace(QStringLiteral("(nur ansehen)"), QStringLiteral("fortgesetzt"));
+            kopf.replace(QStringLiteral("(nur ansehen)"),
+                         zaehle(m_p.schritte).offen > 0 ? QStringLiteral("fortgesetzt") : QStringLiteral("wieder geöffnet"));
             m_kopfzeile->setText(kopf);
             zeigeAnsehen();
             aktualisiereAktionen();
@@ -1189,6 +1205,7 @@ namespace
             m_bemerkung->setPlainText(s.value(QStringLiteral("remark")).toString());
             zeigeStand(s);
             zeigeBilder(s);
+            zeigeHistorie(s);
             if (QListWidgetItem* it = eintrag(idx))
             {
                 m_fuellt = true;
@@ -1242,22 +1259,73 @@ namespace
             }
         }
 
+        // Die archivierten Befunde des Schritts in einer Zeile, der jüngste zuerst; alle im Tooltip.
+        void zeigeHistorie(const QJsonObject& s)
+        {
+            const QJsonArray archiv = s.value(QStringLiteral("history")).toArray();
+            m_historie->setVisible(!archiv.isEmpty());
+            if (archiv.isEmpty()) return;
+            QStringList kurz, alle;
+            for (int n = int(archiv.size()) - 1; n >= 0; --n)
+            {
+                const QJsonObject h = archiv.at(n).toObject();
+                const QString wann = h.value(QStringLiteral("archived")).toString().left(16).replace(QLatin1Char('T'), QLatin1Char(' '));
+                const QString urteil = zeichen(h.value(QStringLiteral("result")).toString());
+                const QString bemerkung = h.value(QStringLiteral("remark")).toString().trimmed();
+                const qsizetype bilder = h.value(QStringLiteral("screenshots")).toArray().size();
+                if (kurz.size() < 2)
+                    kurz.append(QStringLiteral("%1 [%2] %3").arg(wann, urteil,
+                        bemerkung.size() > 70 ? bemerkung.left(70) + QStringLiteral("…") : bemerkung));
+                alle.append(QStringLiteral("%1 [%2]%3\n%4").arg(wann, urteil,
+                    bilder > 0 ? QStringLiteral(" (%1 Screenshots)").arg(bilder) : QString(), bemerkung));
+            }
+            m_historie->setText(QStringLiteral("🗄 %1 archivierte Befunde:  %2")
+                                    .arg(archiv.size()).arg(kurz.join(QStringLiteral("   ·   "))));
+            m_historie->setToolTip(alle.join(QStringLiteral("\n\n")));
+        }
+
         // Bemerkung des gezeigten Schritts übernehmen; true = sie hat sich geändert.
         bool merkeBemerkung()
         {
             if (m_nurAnsehen || m_idx < 0 || m_idx >= m_p.schritte.size()) return false;
             QJsonObject s = schritt(m_idx);
+            const QString alt = s.value(QStringLiteral("remark")).toString();
             const QString neu = m_bemerkung->toPlainText().trimmed();
-            if (s.value(QStringLiteral("remark")).toString() == neu) return false;
+            if (alt == neu) return false;
+            // Befund-Archiv (§14.1 Teil D): ändert sich der Text eines schon bewerteten Schritts,
+            // wandert der alte Befund samt seinen Bildern erst in die Historie. Ein Unterschied
+            // nur im Rand (Testlog aus dem Comm Studio) ist keine Änderung.
+            const QString r = s.value(QStringLiteral("result")).toString();
+            const bool archiviert = r != QLatin1String("open") && !istVorbereitung(s) && alt.trimmed() != neu
+                                    && archiviere(s);
             s.insert(QStringLiteral("remark"), neu);
             m_p.schritte.replace(m_idx, s);
+            if (archiviert) { zeigeBilder(s); zeigeHistorie(s); }
             if (QListWidgetItem* it = eintrag(m_idx)) beschrifte(it, s);
             return true;
+        }
+
+        // Knopf »Archivieren«: der Befund, wie er im Feld steht, mit dem geltenden Urteil.
+        void archiviereBefund()
+        {
+            if (m_nurAnsehen || m_idx < 0 || m_idx >= m_p.schritte.size()) return;
+            QJsonObject s = schritt(m_idx);
+            if (istVorbereitung(s) || istVerwaist(s)) return;
+            s.insert(QStringLiteral("remark"), m_bemerkung->toPlainText().trimmed());
+            if (!archiviere(s))
+            {
+                m_aktionStand->setText(QStringLiteral("Nichts zu archivieren — der Schritt trägt weder Bemerkung noch Screenshot."));
+                return;
+            }
+            m_p.schritte.replace(m_idx, s);
+            schreibe();
+            zeige(m_idx);
         }
 
         void bewerte(const QString& ergebnis)
         {
             if (m_nurAnsehen || m_idx < 0 || istVorbereitung(schritt(m_idx)) || istVerwaist(schritt(m_idx))) return;
+            const QJsonObject vorher = schritt(m_idx);
             merkeBemerkung();
             QJsonObject s = schritt(m_idx);
             const bool beleg = !s.value(QStringLiteral("remark")).toString().isEmpty()
@@ -1269,6 +1337,13 @@ namespace
                 m_bemerkung->setFocus();
                 return;
             }
+            // Befund-Archiv (§14.1 Teil D): ein Urteil, das einem anderen weicht, bleibt in der
+            // Historie — auch ohne Bemerkung. Hat die geänderte Bemerkung den alten Befund schon
+            // abgeheftet, steht es dort.
+            const QString altesUrteil = vorher.value(QStringLiteral("result")).toString();
+            if (altesUrteil != QLatin1String("open") && altesUrteil != ergebnis
+                && s.value(QStringLiteral("history")).toArray().size() == vorher.value(QStringLiteral("history")).toArray().size())
+                archiviereUrteil(s, vorher);
             s.insert(QStringLiteral("result"), ergebnis);
             if (ergebnis == QLatin1String("open"))
             {
@@ -1361,8 +1436,10 @@ namespace
             QJsonObject s = schritt(m_idx);
             QDir ordner(logOrdner(m_p.pfad));
             ordner.mkpath(QStringLiteral("."));
+            // Der Zähler läuft über das Archiv weiter: ein neues Bild nimmt nie den Namen eines
+            // archivierten, auch wenn dessen Datei fehlt.
             QString name;
-            for (int n = 1; ; ++n)
+            for (int n = naechsteBildNummer(s); ; ++n)
             {
                 name = QStringLiteral("%1_%2_%3.png")
                     .arg(laufStamm(), s.value(QStringLiteral("id")).toString()).arg(n);
@@ -1684,6 +1761,7 @@ namespace
 
             for (QPushButton* k : std::as_const(m_urteil))
                 k->setVisible(!prep && !m_nurAnsehen && !(da && istVerwaist(schritt(m_idx))));
+            m_archivBtn->setVisible(!prep && !m_nurAnsehen && !(da && istVerwaist(schritt(m_idx))));
             m_weiterPrep->setVisible(prep);
             m_herstellen->setVisible(!eigene.isEmpty() || prep || m_lauf.aktiv);
             m_vorbereitungBtn->setVisible(v >= 0 && !aktionenVon(m_p, v).isEmpty());
@@ -2229,7 +2307,7 @@ namespace
             m_statLaeufe->selectRow(0);
             oeffneGewaehltenLauf();
             pruefe(m_nurAnsehen && QFileInfo(m_logPfad) == QFileInfo(fertig) && m_kopfzeile->text().contains(QStringLiteral("(nur ansehen)"))
-                   && !m_ansehenHinweis->isHidden() && m_fortsetzenBtn->isHidden()
+                   && !m_ansehenHinweis->isHidden() && m_fortsetzenBtn->text() == QStringLiteral("Diesen Lauf bearbeiten")
                    && schritt(2).value(QStringLiteral("remark")).toString() == QStringLiteral("flackert beim Wechsel"),
                    QStringLiteral("älterer Lauf: öffnet zum Ansehen, mit seinen Urteilen und Bemerkungen"));
             zeige(0);
@@ -2253,13 +2331,143 @@ namespace
                 if (m_statLaeufe->item(r, 7)->text() == QFileInfo(offener).fileName()) zeile = r;
             m_statLaeufe->selectRow(zeile);
             oeffneGewaehltenLauf();
-            const bool angeboten = m_nurAnsehen && !m_fortsetzenBtn->isHidden();
+            const bool angeboten = m_nurAnsehen && m_fortsetzenBtn->text() == QStringLiteral("Diesen Lauf fortsetzen");
             klicke(QStringLiteral("Diesen Lauf fortsetzen"));
             zeige(findeSchritt(QStringLiteral("P4")));
             klicke(QStringLiteral("↷ Überspringen"));
             pruefe(m_statLaeufe->rowCount() == 2 && zeile >= 0 && angeboten && !m_nurAnsehen
                    && leseJson(offener).value(QStringLiteral("summary")).toObject().value(QStringLiteral("skip")).toInt() == 1,
                    QStringLiteral("älterer Lauf mit offenen Schritten: »Diesen Lauf fortsetzen« macht ihn bearbeitbar"));
+        }
+
+        // Befund-Archiv und das Bearbeiten eines abgeschlossenen Laufs (§14.1 Teil D).
+        void selbsttestArchiv(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
+        {
+            const QString liste = d.filePath(QStringLiteral("Archiv.md"));
+            pruefe(schreibeDatei(liste, QByteArray("# Archiv\n\n- [ ] **A1 Eins:** Text.\n- [ ] **A2 Zwei:** Text.\n")),
+                   QStringLiteral("Archiv.md schreiben"));
+            const QDir ablage(d.filePath(QStringLiteral("sichttest-logs")));
+            auto archiv = [this](int idx) { return schritt(idx).value(QStringLiteral("history")).toArray(); };
+            auto bilder = [this](int idx) { return schritt(idx).value(QStringLiteral("screenshots")).toArray(); };
+            QImage bild(40, 30, QImage::Format_RGB32);
+            bild.fill(Qt::blue);
+
+            oeffne(liste, true);
+            m_bemerkung->setPlainText(QStringLiteral("erster Befund"));
+            haengeBildAn(bild);
+            const QString bildEins = bilder(0).at(0).toString();
+            klicke(QStringLiteral("✗ Fail"));
+            pruefe(archiv(0).isEmpty() && m_historie->isHidden(),
+                   QStringLiteral("Befund-Archiv: das erste Urteil archiviert nichts"));
+
+            // Neu bewertet mit anderem Text: der alte Befund wandert samt Bild ins Archiv.
+            zeige(0);
+            m_bemerkung->setPlainText(QStringLiteral("zweiter Befund"));
+            klicke(QStringLiteral("✓⚠ Pass mit Befund"));
+            QJsonObject h = archiv(0).at(0).toObject();
+            pruefe(archiv(0).size() == 1 && h.value(QStringLiteral("result")).toString() == QLatin1String("fail")
+                   && h.value(QStringLiteral("remark")).toString() == QLatin1String("erster Befund")
+                   && h.value(QStringLiteral("screenshots")).toArray() == QJsonArray{ bildEins }
+                   && QDateTime::fromString(h.value(QStringLiteral("archived")).toString(), Qt::ISODate).isValid()
+                   && !h.value(QStringLiteral("rated")).toString().isEmpty() && h.contains(QStringLiteral("build"))
+                   && schritt(0).value(QStringLiteral("result")).toString() == QLatin1String("pass_remark")
+                   && schritt(0).value(QStringLiteral("remark")).toString() == QLatin1String("zweiter Befund") && bilder(0).isEmpty(),
+                   QStringLiteral("Befund-Archiv: Neubewerten mit geändertem Text heftet den alten Befund ab — Urteil, Bemerkung, Bild, Build"));
+
+            // Der Zähler der Bilder läuft über das Archiv weiter, auch wenn die alte Datei fehlt.
+            QFile::remove(ablage.filePath(bildEins));
+            zeige(0);
+            haengeBildAn(bild);
+            const QString bildZwei = bilder(0).at(0).toString();
+            pruefe(bildEins.endsWith(QLatin1String("_A1_1.png")) && bildZwei.endsWith(QLatin1String("_A1_2.png"))
+                   && archiv(0).size() == 1,
+                   QStringLiteral("Befund-Archiv: das nächste Bild nimmt die nächste Nummer (%1), ein Bild allein archiviert nichts").arg(bildZwei));
+            zeige(1);
+            zeige(0);
+            pruefe(archiv(0).size() == 1, QStringLiteral("Befund-Archiv: Hin- und Herblättern ohne Änderung archiviert nichts"));
+
+            // Der Knopf: Feld leer, Urteil bleibt; ein zweiter Klick findet nichts mehr.
+            klicke(QStringLiteral("🗄 Archivieren"));
+            h = archiv(0).at(1).toObject();
+            pruefe(archiv(0).size() == 2 && h.value(QStringLiteral("result")).toString() == QLatin1String("pass_remark")
+                   && h.value(QStringLiteral("remark")).toString() == QLatin1String("zweiter Befund")
+                   && h.value(QStringLiteral("screenshots")).toArray() == QJsonArray{ bildZwei }
+                   && schritt(0).value(QStringLiteral("result")).toString() == QLatin1String("pass_remark")
+                   && schritt(0).value(QStringLiteral("remark")).toString().isEmpty() && bilder(0).isEmpty()
+                   && m_bemerkung->toPlainText().isEmpty() && m_bilder->count() == 0
+                   && !m_historie->isHidden() && m_historie->text().contains(QStringLiteral("2 archivierte Befunde"))
+                   && m_historie->text().indexOf(QStringLiteral("zweiter Befund")) < m_historie->text().indexOf(QStringLiteral("erster Befund")),
+                   QStringLiteral("Befund-Archiv: »Archivieren« leert das Feld, das Urteil bleibt, die Zeile nennt den jüngsten zuerst"));
+            klicke(QStringLiteral("🗄 Archivieren"));
+            pruefe(archiv(0).size() == 2, QStringLiteral("Befund-Archiv: ohne Bemerkung und Bild gibt es nichts zu archivieren"));
+
+            // Ein Unterschied nur im Rand ist keine Änderung (Testlog aus dem Comm Studio).
+            zeige(1);
+            m_bemerkung->setPlainText(QStringLiteral("mit Rand"));
+            klicke(QStringLiteral("✓ Pass"));
+            QJsonObject zwei = schritt(1);
+            zwei.insert(QStringLiteral("remark"), QStringLiteral("mit Rand \n"));
+            m_p.schritte.replace(1, zwei);
+            zeige(1);
+            zeige(0);
+            pruefe(archiv(1).isEmpty(), QStringLiteral("Befund-Archiv: eine Bemerkung, die sich nur im Rand unterscheidet, wird nicht archiviert"));
+
+            const QString fertig = m_logPfad;
+            const QJsonObject log = leseJson(fertig);
+            QFile rf(reportPfad());
+            const QString report = rf.open(QIODevice::ReadOnly) ? QString::fromUtf8(rf.readAll()) : QString();
+            const qsizetype kopf = report.indexOf(QStringLiteral("## 🗄 Historie"));
+            pruefe(log.value(QStringLiteral("steps")).toArray().at(0).toObject().value(QStringLiteral("history")).toArray().size() == 2
+                   && kopf >= 0 && report.indexOf(QStringLiteral("zweiter Befund"), kopf) > kopf
+                   && report.indexOf(QStringLiteral("zweiter Befund"), kopf) < report.indexOf(QStringLiteral("erster Befund"), kopf)
+                   && report.indexOf(bildEins, kopf) > kopf,
+                   QStringLiteral("Befund-Archiv: Testlog und Report tragen die Historie, im Report der jüngste zuerst"));
+
+            // Ein abgeschlossener Lauf lässt sich aus dem Ansehen heraus bearbeiten; das alte Urteil bleibt im Archiv.
+            oeffne(liste, true);
+            zeigeStatistik(false);
+            int zeile = -1;
+            for (int r = 0; m_statLaeufe && r < m_statLaeufe->rowCount(); ++r)
+                if (m_statLaeufe->item(r, 7)->text() == QFileInfo(fertig).fileName()) zeile = r;
+            if (zeile < 0) { pruefe(false, QStringLiteral("abgeschlossener Lauf: steht in der Statistik")); return; }
+            m_statLaeufe->selectRow(zeile);
+            oeffneGewaehltenLauf();
+            const bool angesehen = m_nurAnsehen && m_archivBtn->isHidden();
+            klicke(QStringLiteral("Diesen Lauf bearbeiten"));
+            zeige(1);
+            m_bemerkung->setPlainText(QStringLiteral("doch nicht"));
+            klicke(QStringLiteral("✗ Fail"));
+            const QJsonObject danach = leseJson(fertig).value(QStringLiteral("steps")).toArray().at(1).toObject();
+            pruefe(angesehen && !m_nurAnsehen && m_kopfzeile->text().contains(QStringLiteral("wieder geöffnet"))
+                   && QFileInfo(m_logPfad) == QFileInfo(fertig)
+                   && danach.value(QStringLiteral("result")).toString() == QLatin1String("fail")
+                   && danach.value(QStringLiteral("history")).toArray().size() == 1
+                   && danach.value(QStringLiteral("history")).toArray().at(0).toObject().value(QStringLiteral("result")).toString() == QLatin1String("pass")
+                   && leseJson(fertig).value(QStringLiteral("summary")).toObject().value(QStringLiteral("fail")).toInt() == 1,
+                   QStringLiteral("abgeschlossener Lauf: »Diesen Lauf bearbeiten« öffnet ihn wieder, das überschriebene Urteil steht im Archiv"));
+
+            // Ein Urteil weicht einem anderen, der Text bleibt: das alte Urteil steht im Archiv,
+            // Bemerkung und Bilder bleiben am Schritt.
+            haengeBildAn(bild);
+            klicke(QStringLiteral("✓⚠ Pass mit Befund"));
+            h = archiv(1).last().toObject();
+            pruefe(archiv(1).size() == 2 && h.value(QStringLiteral("result")).toString() == QLatin1String("fail")
+                   && h.value(QStringLiteral("remark")).toString() == QLatin1String("doch nicht")
+                   && h.value(QStringLiteral("screenshots")).toArray().isEmpty() && h.contains(QStringLiteral("build"))
+                   && schritt(1).value(QStringLiteral("remark")).toString() == QLatin1String("doch nicht") && bilder(1).size() == 1,
+                   QStringLiteral("Befund-Archiv: Urteilswechsel bei gleichem Text heftet das alte Urteil ab, Bemerkung und Bild bleiben am Schritt"));
+            klicke(QStringLiteral("✓⚠ Pass mit Befund"));
+            pruefe(archiv(1).size() == 2, QStringLiteral("Befund-Archiv: dasselbe Urteil noch einmal archiviert nichts"));
+            // Ein Urteil ohne Bemerkung und Bild geht ebenso wenig verloren, auch beim Zurücknehmen.
+            zeige(0);
+            klicke(QStringLiteral("✓ Pass"));
+            h = archiv(0).last().toObject();
+            const bool ohneText = archiv(0).size() == 3 && h.value(QStringLiteral("result")).toString() == QLatin1String("pass_remark")
+                                  && h.value(QStringLiteral("remark")).toString().isEmpty();
+            klicke(QStringLiteral("○ Offen"));
+            pruefe(ohneText && archiv(0).size() == 4 && archiv(0).last().toObject().value(QStringLiteral("result")).toString() == QLatin1String("pass")
+                   && leseJson(fertig).value(QStringLiteral("steps")).toArray().at(0).toObject().value(QStringLiteral("history")).toArray().size() == 4,
+                   QStringLiteral("Befund-Archiv: ein Urteil ohne Bemerkung bleibt beim Wechsel und beim Zurücknehmen in der Historie"));
         }
 
         // Nachtest-Indikator, »Unkritische überspringen« und die Listenwahl (§14.1 Teil C).
@@ -2869,7 +3077,9 @@ namespace
         QWidget*  m_ansehenHinweis = nullptr;
         QLabel*   m_ansehenText = nullptr;
         QPushButton* m_fortsetzenBtn = nullptr;
-        QDialog*  m_statistik = nullptr;      // eigenes Fenster, erst beim ersten Öffnen gebaut
+        QPushButton* m_archivBtn = nullptr;   // Befund-Archiv: »Archivieren«
+        QLabel*   m_historie = nullptr;       // archivierte Befunde des gezeigten Schritts
+        QDialog*  m_statistik = nullptr;     // eigenes Fenster, erst beim ersten Öffnen gebaut
         QLabel*   m_statLage = nullptr;
         QTableWidget* m_statLaeufe = nullptr;
         QTableWidget* m_statSchritte = nullptr;
