@@ -305,6 +305,24 @@ namespace
         d.schliesse(g_sitzung);
     }
 
+    // Beobachtung CS (B-A1): die Anwendung schickt Zustände und endet gleich darauf, während der
+    // Tester gerade nicht liest. Was im Kanal liegt, muss samt tschuess noch ankommen.
+    void kurz()
+    {
+        const sts_konfig k = konfig();
+        if (d.oeffne(&k, &g_sitzung) != STS_OK) { pruefe(false, "sts_oeffne"); return; }
+        d.verbinde(g_sitzung);
+        const ULONGLONG bis = GetTickCount64() + 15000;
+        while (d.zustand(g_sitzung) == STS_VERBINDET && GetTickCount64() < bis) Sleep(20);
+        pruefe(d.zustand(g_sitzung) == STS_VERBUNDEN, "kurz: verbunden");
+        Sleep(400);   // der Tester liest ab hier nicht mehr
+        bool gut = d.melde_zustand(g_sitzung, "probe", 1, "eins") == STS_OK;
+        gut = gut && d.melde_zustand(g_sitzung, "probe", 0, "zwei") == STS_OK;
+        gut = gut && d.melde_zustand(g_sitzung, "probe", 1, "drei") == STS_OK;
+        pruefe(gut, "kurz: drei Zustände geschickt, dann Ende");
+        d.schliesse(g_sitzung);
+    }
+
     void start()
     {
         const sts_konfig k = konfig();
@@ -324,7 +342,7 @@ int main()
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!argv || argc < 3)
     {
-        std::fputs("Aufruf: Gegenprobe <dll> lokal|anwendung|kopf|start|abschied\n", stderr);
+        std::fputs("Aufruf: Gegenprobe <dll> lokal|anwendung|kopf|start|abschied|kurz\n", stderr);
         return 101;
     }
 
@@ -358,6 +376,7 @@ int main()
     else if (szenario == L"kopf") kopf(argv[1]);
     else if (szenario == L"start") start();
     else if (szenario == L"abschied") abschied();
+    else if (szenario == L"kurz") kurz();
     else return 101;
 
     std::fflush(stdout);

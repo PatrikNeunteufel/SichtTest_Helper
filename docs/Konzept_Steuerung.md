@@ -861,8 +861,9 @@ Aktionen. Die Ergebnis-DB `testergebnisse.sqlite` ist eine eigene SQLite-Datei
 
 **Stand 2026-10-10:** Stufe 1 seit `v0.2.0`; Stufe 2 seit dem 10.10. im Comm Studio (fünf
 Aktionen, `--testing` gehört dem Werkzeug); Stufe 3 mit `v0.3.5`/`v0.3.6` und im Comm Studio am
-Bildschirm gelaufen. Stufe 4 ist abgestimmt (§14.1); **Teil A ist im Werkzeug gebaut** (S 1.1,
-P 1.1; §3, §4, §6.2, §6.4), im Comm Studio noch nicht, und unveröffentlicht.
+Bildschirm gelaufen. Stufe 4 ist abgestimmt (§14.1); **die Teile A und B sind gebaut**, A auch
+im Comm Studio und dort am Bildschirm gelaufen (S 1.1, P 1.1; §3, §4, §6.2, §6.4); beides
+unveröffentlicht.
 
 ### 14.1 Stufe 4 in vier Teilen (abgestimmt mit CS, Entscheide Patrik 2026-10-10)
 
@@ -909,6 +910,20 @@ laufen weiter, §5)
   Sobald `TestProtokollWindow` entfällt, gehört das Schema dem Werkzeug; Spalten werden nur ergänzt.
 - Der Tester bringt dafür Qt6Sql und das Plugin `qsqlite` mit.
 - Statistik (Läufe je Build, Problemschritte) und das Öffnen eines älteren Laufs.
+
+Gebaut (2026-10-10): die DB wird beim ersten Schreiben in einer Ablage angelegt. Ihre einmalige
+Umstellung kürzt jede `log_datei` mit Ordner auf den Namen; tragen zwei Zeilen danach denselben
+(die Ablage wurde einmal kopiert und weiterbenutzt), bleibt die mit der höheren `lauf_id`, die
+ältere geht samt ihren Schritten. Gesucht wird ein Lauf über den Namen ohne
+Groß-/Kleinschreibung. Verwaiste Urteile werden gespiegelt, Vorbereitungen nicht. Die ergänzten
+Spalten heißen `testschritt.build_exe` und `testschritt.build_timestamp`. Ein Fehler der DB hält
+nichts an; er steht einmal im Fenster.
+
+Die **Statistik** ist ein eigenes Fenster (Knopf **Statistik…**), kein Reiter, damit das
+Testfenster schmal bleibt (Entscheid Patrik). Ein **älterer Lauf** öffnet daraus **nur zum
+Ansehen**: nichts wird geschrieben, weder Testlog noch DB. Hat er offene Schritte, macht
+**Diesen Lauf fortsetzen** ihn bearbeitbar; abgeschlossene Läufe werden erst mit Teil D wieder
+bearbeitbar, weil bis dahin kein Befund-Archiv ein überschriebenes Urteil aufhebt.
 
 **Teil C — Nachtest-Indikator**
 

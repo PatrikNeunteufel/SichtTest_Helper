@@ -233,6 +233,7 @@ für den Ordner der Liste nennt:
 | `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`, bei ausgelösten Aktionen `actions`; dazu `build` und `summary`. Aus der Liste gehen `setup`, `test_db` und `areas` unverändert mit, die Nachbereitung steht unter `teardown_actions`. War eine Anwendung verbunden, nennt `steuerung` ihren Namen, ihre Version, die Version der DLL (`produkt`), `p`, `s` und den `zustand` der Verbindung |
 | `<Liste>_<Zeit>.report.md` | derselbe Stand zum Lesen: zuerst Fail und Pass mit Befund samt Bemerkung und Bildern, dann Übersprungen, Offen, Pass |
 | `<Liste>_<Zeit>_<Kennung>_<n>.png` | die Screenshots |
+| `testergebnisse.sqlite` | je Ablage eine kleine SQLite-Datei über alle Läufe: je Lauf Summe und Build, je Schritt Urteil, Bemerkung und der Build, gegen den es fiel. Das Testlog bleibt die Wahrheit, die Datei ist der Index dazu |
 
 Geschrieben wird nach jeder Bewertung, nach jedem Screenshot, beim Wechsel des
 Schritts und beim Schließen. Beim nächsten Start wird der jüngste Lauf der
@@ -243,6 +244,17 @@ ein neuer Lauf, und die Kopfzeile sagt es; der abgeschlossene bleibt, wie er ist
 `build` nennt die Exe, gegen die der Lauf lief, und ihren Zeitstempel (ISO): die
 der verbundenen Anwendung; ohne Verbindung die aus der Liste oder dem Projekt.
 Ein fortgesetzter Lauf ohne Verbindung behält, was sein Testlog schon nennt.
+
+## Statistik und ältere Läufe
+
+**Statistik…** öffnet ein eigenes Fenster: die Lage in einem Satz, alle Läufe der Liste
+(Start, Build, Zähler, Testlog) und ihre Schritte mit Pässen, Fails und dem letzten Ergebnis —
+die Problemschritte zuerst. Es bleibt offen und frischt sich bei jedem Schreiben auf.
+
+**Lauf öffnen** (oder ein Doppelklick) zeigt einen älteren Lauf im Hauptfenster, **nur zum
+Ansehen**: Urteile, Bemerkungen und Bilder sind da, geschrieben wird nichts. Hat er noch offene
+Schritte, macht **Diesen Lauf fortsetzen** ihn bearbeitbar; **Zurück zum aktuellen Lauf** führt
+zurück.
 
 ## Bedienung
 
@@ -260,10 +272,9 @@ Fail und Pass mit Befund verlangen eine Bemerkung oder einen Screenshot.
 
 ## Was das Werkzeug noch nicht kann
 
-Ein Befund-Archiv je Schritt, eine Ergebnis-Datenbank über alle Läufe, einen
-risikobasierten Nachtest-Indikator (die Dateien unter `gewichtung` werden
-gelesen, wirken aber noch nicht), »Unkritische überspringen« und eine Statistik
-über alle Läufe. Geplant ist das in `docs/Konzept_Steuerung.md` §14.
+Ein Befund-Archiv je Schritt, einen risikobasierten Nachtest-Indikator (die
+Dateien unter `gewichtung` werden gelesen, wirken aber noch nicht) und
+»Unkritische überspringen«. Geplant ist das in `docs/Konzept_Steuerung.md` §14.1.
 
 Gebaut und geprüft ist nur Windows; die Steuerung gibt es nur dort.
 

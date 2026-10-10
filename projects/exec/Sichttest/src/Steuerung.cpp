@@ -549,6 +549,30 @@ namespace sichttest
                    QStringLiteral("Abschied: die Anwendung erfährt das geordnete Ende des Testers (Exit %1)").arg(p.exitCode()));
         }
 
+        // Beobachtung CS (B-A1): die Anwendung endet, während ungelesene Nachrichten im Kanal liegen.
+        {
+            const QString eigener = kanal + QStringLiteral("-kurz");
+            Steuerung leser;
+            int geordnet = -1;
+            leser.beiEnde = [&](const QString&, bool g) { geordnet = g ? 1 : 0; };
+            QString letzter;
+            leser.beiAenderung = [&]() {
+                if (const Steuerung::Anwendung* a = leser.anwendung(g))
+                    letzter = a->zustaende.value(QStringLiteral("probe")).toObject().value(QStringLiteral("text")).toString();
+            };
+            leser.lausche(eigener);
+            QProcess p;
+            starte(p, QStringLiteral("kurz"), eigener);
+            const bool begruesst = warteBis([&] { return leser.anwendung(g) != nullptr; }, 10000);
+            // Ab jetzt liest der Tester nicht: kein Durchlauf der Ereignisschleife, bis die Anwendung weg ist.
+            p.waitForFinished(10000);
+            const bool weg = p.state() == QProcess::NotRunning;
+            warteBis([&] { return geordnet >= 0; }, 3000);
+            pruefe(begruesst && weg && letzter == QLatin1String("drei") && geordnet == 1,
+                   QStringLiteral("ungelesen im Kanal: Zustände und tschuess kommen noch an, nachdem die Anwendung geendet hat "
+                                  "(letzter »%1«, geordnet %2)").arg(letzter).arg(geordnet));
+        }
+
         // 3. Die Köpfe für C++ und für Qt: je eine Anwendung, die nur den Kopf benutzt.
         {
             const QString k = QStringLiteral("GegenprobeKopf");

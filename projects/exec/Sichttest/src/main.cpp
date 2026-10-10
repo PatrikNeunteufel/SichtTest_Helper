@@ -11,6 +11,7 @@
 //          Sichttest --selbsttest <leerer ordner>     (Exit = gescheiterte Prüfungen)
 //          Sichttest --steuerung [datei|ordner]       (so startet ihn die DLL der Anwendung)
 
+#include "Ergebnis.hpp"
 #include "Projekt.hpp"
 #include "Protokoll.hpp"
 #include "Steuerung.hpp"
@@ -27,6 +28,7 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDialog>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QElapsedTimer>
@@ -50,6 +52,9 @@
 #include <QSettings>
 #include <QShortcut>
 #include <QSplitter>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QTableWidget>
 #include <QTextBrowser>
 #include <QTextStream>
 #include <QThread>
@@ -261,6 +266,7 @@ namespace
                    QStringLiteral("die Liste selbst ist unverändert"));
 
             selbsttestBuild(d, pruefe, klicke);
+            selbsttestErgebnis(d, pruefe, klicke);
             selbsttestListen(d, pruefe);
 #ifdef Q_OS_WIN
             fehler += selbsttestSteuerung(aus);
@@ -468,6 +474,10 @@ namespace
             auto* pfadBtn = new QPushButton(QStringLiteral("Report-Pfad kopieren"), this);
             pfadBtn->setToolTip(QStringLiteral("Den Pfad des Reports in die Zwischenablage — zum Einfügen im Chat."));
             fuss->addWidget(pfadBtn);
+            auto* statistikBtn = new QPushButton(QStringLiteral("Statistik…"), this);
+            statistikBtn->setToolTip(QStringLiteral("Alle Läufe dieser Liste und ihre Problemschritte, aus der Ergebnis-DB der Ablage."));
+            fuss->addWidget(statistikBtn);
+            connect(statistikBtn, &QPushButton::clicked, this, [this]() { zeigeStatistik(true); });
             lay->addLayout(fuss);
 
             m_steuerungZeile = new QLabel(this);
@@ -505,6 +515,21 @@ namespace
                 m_nachbereitet = false;
                 bieteNachbereitungAn();
             });
+
+            // Ein älterer Lauf, aus der Statistik geöffnet: nur ansehen, nichts wird geschrieben.
+            m_ansehenHinweis = new QWidget(this);
+            auto* ansehenZeile = new QHBoxLayout(m_ansehenHinweis);
+            ansehenZeile->setContentsMargins(0, 0, 0, 0);
+            m_ansehenText = new QLabel(m_ansehenHinweis);
+            m_fortsetzenBtn = new QPushButton(QStringLiteral("Diesen Lauf fortsetzen"), m_ansehenHinweis);
+            auto* zurueckBtn = new QPushButton(QStringLiteral("Zurück zum aktuellen Lauf"), m_ansehenHinweis);
+            ansehenZeile->addWidget(m_ansehenText, 1);
+            ansehenZeile->addWidget(m_fortsetzenBtn);
+            ansehenZeile->addWidget(zurueckBtn);
+            m_ansehenHinweis->hide();
+            lay->addWidget(m_ansehenHinweis);
+            connect(m_fortsetzenBtn, &QPushButton::clicked, this, [this]() { setzeFort(); });
+            connect(zurueckBtn, &QPushButton::clicked, this, [this]() { oeffne(m_p.pfad, false); });
             m_steuerung.beiEnde = [this](const QString& anwendung, bool geordnet) {
                 // Eine Aktion mit beendet_anwendung hat das Ende gewollt: kein Hinweis.
                 const bool gewollt = m_endeDurchAktion;
@@ -687,9 +712,11 @@ namespace
             return QJsonDocument::fromJson(f.readAll()).object();
         }
 
-        void oeffne(const QString& pfad, bool neuerLauf)
+        // ansehen: ein bestimmtes Testlog dieser Liste, nur zum Ansehen (aus der Statistik).
+        void oeffne(const QString& pfad, bool neuerLauf, const QString& ansehen = {})
         {
             if (merkeBemerkung()) schreibe();
+            m_nurAnsehen = !ansehen.isEmpty();
             QString fehler;
             Protokoll p = lade(pfad, &fehler);
             if (p.schritte.isEmpty())
@@ -699,9 +726,9 @@ namespace
             }
             // Fortgesetzt wird der jüngste Lauf nur, solange er offene Schritte hat; ein
             // abgeschlossener bleibt, wie er ist, und es beginnt ein neuer.
-            const QString juengster = neuerLauf ? QString() : neuesterLauf(pfad);
+            const QString juengster = m_nurAnsehen ? ansehen : neuerLauf ? QString() : neuesterLauf(pfad);
             const QJsonObject log = juengster.isEmpty() ? QJsonObject() : leseJson(juengster);
-            const bool vorigerFertig = !juengster.isEmpty() && istAbgeschlossen(log);
+            const bool vorigerFertig = !m_nurAnsehen && !juengster.isEmpty() && istAbgeschlossen(log);
             const QString lauf = vorigerFertig ? QString() : juengster;
             if (!lauf.isEmpty())
             {
@@ -747,7 +774,8 @@ namespace
                 kopf += m_exeDatei.isEmpty()
                     ? QStringLiteral(" · Exe nicht gefunden: %1").arg(m_p.exe.toHtmlEscaped())
                     : QStringLiteral(" · Exe vom %1").arg(m_exeZeit);
-            kopf += !lauf.isEmpty() ? QStringLiteral(" · Lauf vom %1 fortgesetzt").arg(m_gestartet)
+            kopf += m_nurAnsehen ? QStringLiteral(" · Lauf vom %1 (nur ansehen)").arg(m_gestartet)
+                  : !lauf.isEmpty() ? QStringLiteral(" · Lauf vom %1 fortgesetzt").arg(m_gestartet)
                   : vorigerFertig ? QStringLiteral(" · neuer Lauf (der vorige vom %1 ist abgeschlossen)")
                                         .arg(log.value(QStringLiteral("started")).toString())
                                   : QStringLiteral(" · neuer Lauf");
@@ -767,6 +795,150 @@ namespace
             zeigeSteuerung();
             merkeZustaende();
             zeigeStehendes();
+            zeigeAnsehen();
+            zeigeStatistik(false);
+        }
+
+        // Die Zeile für einen nur angesehenen Lauf; sein Inhalt lässt sich nicht ändern.
+        void zeigeAnsehen()
+        {
+            m_bemerkung->setReadOnly(m_nurAnsehen);
+            m_ansehenHinweis->setVisible(m_nurAnsehen);
+            if (!m_nurAnsehen) return;
+            const bool offen = zaehle(m_p.schritte).offen > 0;
+            m_ansehenText->setText(offen
+                ? QStringLiteral("Älterer Lauf vom %1 — nur zum Ansehen, es wird nichts geschrieben.").arg(m_gestartet)
+                : QStringLiteral("Abgeschlossener Lauf vom %1 — nur zum Ansehen, es wird nichts geschrieben.").arg(m_gestartet));
+            m_fortsetzenBtn->setVisible(offen);
+        }
+
+        // Aus dem Ansehen heraus: einen Lauf mit offenen Schritten wieder bearbeiten.
+        void setzeFort()
+        {
+            if (!m_nurAnsehen || zaehle(m_p.schritte).offen == 0) return;
+            m_nurAnsehen = false;
+            QString kopf = m_kopfzeile->text();
+            kopf.replace(QStringLiteral("(nur ansehen)"), QStringLiteral("fortgesetzt"));
+            m_kopfzeile->setText(kopf);
+            zeigeAnsehen();
+            aktualisiereAktionen();
+        }
+
+        // --- Statistik (§14.1 Teil B) -------------------------------------------
+
+        // Eigenes Fenster: Lage, Läufe der Liste, Schritte der Liste. zeigen = false frischt
+        // nur auf, wenn es schon offen ist.
+        void zeigeStatistik(bool zeigen)
+        {
+            if (!m_statistik)
+            {
+                if (!zeigen && !m_statistikImTest) return;
+                m_statistik = new QDialog(this);
+                m_statistik->setWindowTitle(QStringLiteral("Sichttest — Statistik"));
+                m_statistik->resize(900, 620);
+                auto* lay = new QVBoxLayout(m_statistik);
+                m_statLage = new QLabel(m_statistik);
+                m_statLage->setWordWrap(true);
+                lay->addWidget(m_statLage);
+                m_statLaeufe = new QTableWidget(0, 8, m_statistik);
+                m_statLaeufe->setHorizontalHeaderLabels({ QStringLiteral("Start"), QStringLiteral("Build"),
+                    QStringLiteral("✓"), QStringLiteral("✓⚠"), QStringLiteral("✗"), QStringLiteral("↷"),
+                    QStringLiteral("○"), QStringLiteral("Testlog") });
+                m_statLaeufe->setEditTriggers(QAbstractItemView::NoEditTriggers);
+                m_statLaeufe->setSelectionBehavior(QAbstractItemView::SelectRows);
+                m_statLaeufe->setSelectionMode(QAbstractItemView::SingleSelection);
+                lay->addWidget(m_statLaeufe, 2);
+                auto* zeile = new QHBoxLayout();
+                m_statOeffnen = new QPushButton(QStringLiteral("Lauf öffnen"), m_statistik);
+                m_statOeffnen->setToolTip(QStringLiteral("Den gewählten Lauf im Hauptfenster zeigen — nur zum Ansehen."));
+                zeile->addWidget(m_statOeffnen);
+                zeile->addStretch(1);
+                lay->addLayout(zeile);
+                m_statSchritte = new QTableWidget(0, 5, m_statistik);
+                m_statSchritte->setHorizontalHeaderLabels({ QStringLiteral("Schritt"), QStringLiteral("Pässe"),
+                    QStringLiteral("Fails"), QStringLiteral("zuletzt"), QStringLiteral("wann") });
+                m_statSchritte->setEditTriggers(QAbstractItemView::NoEditTriggers);
+                lay->addWidget(m_statSchritte, 3);
+                connect(m_statOeffnen, &QPushButton::clicked, this, [this]() { oeffneGewaehltenLauf(); });
+                connect(m_statLaeufe, &QTableWidget::cellDoubleClicked, this, [this](int, int) { oeffneGewaehltenLauf(); });
+            }
+            if (zeigen) { m_statistik->show(); m_statistik->raise(); }
+            else if (m_statistik->isHidden() && !m_statistikImTest) return;
+            fuelleStatistik();
+        }
+
+        void fuelleStatistik()
+        {
+            if (!m_statistik || m_p.pfad.isEmpty()) return;
+            const QString ablage = logOrdner(m_p.pfad);
+            const QList<ergebnis::LaufZeile> laeufe = ergebnis::laeufe(ablage, m_p.titel);
+            auto kurz = [](const QString& iso) { return QString(iso).left(16).replace(QLatin1Char('T'), QLatin1Char(' ')); };
+            QSet<QString> builds;
+            int fertig = 0;
+            m_statLaeufe->setRowCount(int(laeufe.size()));
+            for (int r = 0; r < laeufe.size(); ++r)
+            {
+                const ergebnis::LaufZeile& l = laeufe.at(r);
+                builds.insert(l.buildStempel);
+                if (l.offen == 0) ++fertig;
+                const QStringList zellen{ kurz(l.gestartet), kurz(l.buildStempel), QString::number(l.pass),
+                    QString::number(l.passBefund), QString::number(l.fail), QString::number(l.skip),
+                    QString::number(l.offen), QFileInfo(l.logDatei).fileName() };
+                for (int c = 0; c < zellen.size(); ++c) m_statLaeufe->setItem(r, c, new QTableWidgetItem(zellen.at(c)));
+            }
+            m_statLaeufe->resizeColumnsToContents();
+
+            // Je Kennung über alle Listen der Ablage summiert, gezeigt nur die Schritte dieser Liste.
+            QHash<QString, QString> titel;
+            for (const QJsonValue& v : std::as_const(m_p.schritte))
+                if (!istVorbereitung(v.toObject()))
+                    titel.insert(v.toObject().value(QStringLiteral("id")).toString(),
+                                 v.toObject().value(QStringLiteral("title")).toString());
+            QList<ergebnis::SchrittSumme> summen = ergebnis::schrittSummen(ablage);
+            summen.erase(std::remove_if(summen.begin(), summen.end(),
+                             [&titel](const ergebnis::SchrittSumme& s) { return !titel.contains(s.id); }),
+                         summen.end());
+            std::sort(summen.begin(), summen.end(), [](const ergebnis::SchrittSumme& a, const ergebnis::SchrittSumme& b) {
+                return a.fails != b.fails ? a.fails > b.fails : a.paesse < b.paesse;
+            });
+            const QHash<QString, ergebnis::LetztesErgebnis> letzte = ergebnis::letzteErgebnisse(ablage);
+            m_statSchritte->setRowCount(int(summen.size()));
+            for (int r = 0; r < summen.size(); ++r)
+            {
+                const ergebnis::SchrittSumme& s = summen.at(r);
+                const auto it = letzte.constFind(s.id);
+                const QStringList zellen{ QStringLiteral("%1  %2").arg(s.id, titel.value(s.id)), QString::number(s.paesse),
+                    QString::number(s.fails), it == letzte.constEnd() ? QStringLiteral("—") : zeichen(it->ergebnis),
+                    it == letzte.constEnd() ? QString() : it->gestartet.left(10) };
+                for (int c = 0; c < zellen.size(); ++c) m_statSchritte->setItem(r, c, new QTableWidgetItem(zellen.at(c)));
+            }
+            m_statSchritte->resizeColumnsToContents();
+
+            int verifiziert = 0;
+            for (auto it = titel.constBegin(); it != titel.constEnd(); ++it)
+                if (letzte.contains(it.key())) ++verifiziert;
+            m_statLage->setText(QStringLiteral("<b>%1</b> — %2 Läufe (%3 abgeschlossen) über %4 Build-Stände · "
+                                               "%5 von %6 Schritten je verifiziert<br>"
+                                               "<span style='color:#8a8a8a;'>%7</span>")
+                .arg(m_p.titel.toHtmlEscaped()).arg(laeufe.size()).arg(fertig).arg(builds.size())
+                .arg(verifiziert).arg(titel.size())
+                .arg(QDir::toNativeSeparators(ergebnis::dbPfad(ablage)).toHtmlEscaped()));
+        }
+
+        void oeffneGewaehltenLauf()
+        {
+            const int r = m_statLaeufe ? m_statLaeufe->currentRow() : -1;
+            if (r < 0 || m_lauf.aktiv) return;
+            const QString datei = QDir(logOrdner(m_p.pfad)).filePath(m_statLaeufe->item(r, 7)->text());
+            if (!QFileInfo::exists(datei))
+            {
+                m_statLage->setText(QStringLiteral("<span style='color:#d64545;'>Das Testlog liegt nicht mehr in der Ablage: %1</span>")
+                                        .arg(QDir::toNativeSeparators(datei).toHtmlEscaped()));
+                return;
+            }
+            // Der gerade bearbeitete Lauf ist der aktuelle: der bleibt, wie er ist.
+            if (!m_nurAnsehen && QFileInfo(datei) == QFileInfo(m_logPfad)) return;
+            oeffne(m_p.pfad, false, datei);
         }
 
         QJsonObject schritt(int idx) const { return m_p.schritte.at(idx).toObject(); }
@@ -895,7 +1067,7 @@ namespace
         // Bemerkung des gezeigten Schritts übernehmen; true = sie hat sich geändert.
         bool merkeBemerkung()
         {
-            if (m_idx < 0 || m_idx >= m_p.schritte.size()) return false;
+            if (m_nurAnsehen || m_idx < 0 || m_idx >= m_p.schritte.size()) return false;
             QJsonObject s = schritt(m_idx);
             const QString neu = m_bemerkung->toPlainText().trimmed();
             if (s.value(QStringLiteral("remark")).toString() == neu) return false;
@@ -907,7 +1079,7 @@ namespace
 
         void bewerte(const QString& ergebnis)
         {
-            if (m_idx < 0 || istVorbereitung(schritt(m_idx)) || istVerwaist(schritt(m_idx))) return;
+            if (m_nurAnsehen || m_idx < 0 || istVorbereitung(schritt(m_idx)) || istVerwaist(schritt(m_idx))) return;
             merkeBemerkung();
             QJsonObject s = schritt(m_idx);
             const bool beleg = !s.value(QStringLiteral("remark")).toString().isEmpty()
@@ -1005,7 +1177,7 @@ namespace
 
         void haengeBildAn(const QImage& bild)
         {
-            if (m_idx < 0) return;
+            if (m_idx < 0 || m_nurAnsehen) return;
             merkeBemerkung();
             QJsonObject s = schritt(m_idx);
             QDir ordner(logOrdner(m_p.pfad));
@@ -1035,7 +1207,7 @@ namespace
         void loescheBild()
         {
             QListWidgetItem* gewaehlt = m_bilder->currentItem();
-            if (!gewaehlt || m_idx < 0) return;
+            if (!gewaehlt || m_idx < 0 || m_nurAnsehen) return;
             const QString name = gewaehlt->text();
             QJsonObject s = schritt(m_idx);
             QJsonArray bilder = s.value(QStringLiteral("screenshots")).toArray();
@@ -1051,14 +1223,28 @@ namespace
 
         void schreibe()
         {
-            if (m_p.pfad.isEmpty()) return;
+            if (m_p.pfad.isEmpty() || m_nurAnsehen) return;
             QDir().mkpath(logOrdner(m_p.pfad));
             bool gut = true;
+            const QJsonObject log = alsLog(m_p, m_gestartet);
             {
                 QSaveFile f(m_logPfad);
                 gut = f.open(QIODevice::WriteOnly)
-                      && f.write(QJsonDocument(alsLog(m_p, m_gestartet)).toJson()) >= 0
+                      && f.write(QJsonDocument(log).toJson()) >= 0
                       && f.commit();
+            }
+            // Die Ergebnis-DB der Ablage spiegelt jeden Stand (§14.1 Teil B). Ein Fehler dort hält
+            // nichts an; er steht einmal in der Statuszeile der Aktionen.
+            if (gut)
+            {
+                const QString dbFehler = ergebnis::spiegele(m_logPfad, log);
+                if (!dbFehler.isEmpty() && !m_dbGewarnt)
+                {
+                    m_dbGewarnt = true;
+                    m_aktionStand->setText(QStringLiteral("<span style='color:#d64545;'>Ergebnis-DB: %1</span>")
+                                               .arg(dbFehler.toHtmlEscaped()));
+                }
+                zeigeStatistik(false);
             }
             {
                 QSaveFile f(reportPfad());
@@ -1315,7 +1501,8 @@ namespace
             const QJsonArray eigene = da ? aktionenVon(m_p, m_idx) : QJsonArray();
             const int v = da && !prep ? vorbereitungVon(m_p, m_idx) : -1;
 
-            for (QPushButton* k : std::as_const(m_urteil)) k->setVisible(!prep && !(da && istVerwaist(schritt(m_idx))));
+            for (QPushButton* k : std::as_const(m_urteil))
+                k->setVisible(!prep && !m_nurAnsehen && !(da && istVerwaist(schritt(m_idx))));
             m_weiterPrep->setVisible(prep);
             m_herstellen->setVisible(!eigene.isEmpty() || prep || m_lauf.aktiv);
             m_vorbereitungBtn->setVisible(v >= 0 && !aktionenVon(m_p, v).isEmpty());
@@ -1339,6 +1526,7 @@ namespace
         void starteAktionen(int logIdx, const QJsonArray& liste)
         {
             if (m_lauf.aktiv || liste.isEmpty() || (logIdx < 0 && logIdx != kNachbereitung)) return;
+            if (m_nurAnsehen && logIdx != kNachbereitung) return;   // ein angesehener Lauf bekommt keine Einträge
             if (!m_steuerung.anwendung(m_p.anwendung)) return;
 
             // Was Zustand verwerfen kann, fragt der Tester vorher — einmal für alle (§3, fragt_nach).
@@ -1769,6 +1957,128 @@ namespace
                    && danach.at(2).toObject().value(QStringLiteral("remark")).toString() == QStringLiteral("alter Befund")
                    && log.value(QStringLiteral("summary")).toObject().value(QStringLiteral("fail")).toInt() == 0,
                    QStringLiteral("verwaistes Urteil: steht mit Bemerkung weiter im Testlog"));
+        }
+
+        // Ergebnis-DB, Statistik und das Ansehen eines älteren Laufs (§14.1 Teil B).
+        void selbsttestErgebnis(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
+        {
+            auto bytes = [](const QString& pfad) {
+                QFile f(pfad);
+                return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+            };
+            const QString ablage = d.filePath(QStringLiteral("sichttest-logs"));
+            const QString liste = d.filePath(QStringLiteral("Selbsttest.md"));
+
+            // 1. Was die ersten Tests geschrieben haben, steht in der DB der Ablage.
+            QList<ergebnis::LaufZeile> l = ergebnis::laeufe(ablage, QStringLiteral("Selbsttest"));
+            pruefe(l.size() == 1 && l.first().pass == 2 && l.first().fail == 1 && l.first().skip == 1 && l.first().offen == 0
+                   && !l.first().logDatei.contains(QLatin1Char('/')) && !l.first().logDatei.contains(QLatin1Char('\\')),
+                   QStringLiteral("Ergebnis-DB: der Lauf steht mit seiner Summe darin, log_datei ist der Dateiname"));
+            QHash<QString, ergebnis::LetztesErgebnis> letzte = ergebnis::letzteErgebnisse(ablage);
+            pruefe(letzte.value(QStringLiteral("B1")).ergebnis == QLatin1String("fail") && !letzte.contains(QStringLiteral("P4")),
+                   QStringLiteral("Ergebnis-DB: letztes verifiziertes Ergebnis je Schritt; übersprungen zählt nicht"));
+            pruefe(letzte.value(QStringLiteral("X9")).ergebnis == QLatin1String("fail")
+                   && letzte.value(QStringLiteral("X9")).buildStempel == QLatin1String("2026-09-01T14:14:08"),
+                   QStringLiteral("Ergebnis-DB: ein verwaistes Urteil wird gespiegelt, mit dem Build am Urteil"));
+
+            // 2. Eine DB wie aus dem Comm Studio: volle Pfade, und eine Ablage, die einmal kopiert wurde.
+            ergebnis::schliesse();
+            const QString alt = d.filePath(QStringLiteral("db-alt"));
+            QDir(alt).removeRecursively();
+            QDir().mkpath(alt);
+            {
+                QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("selbsttest_alt"));
+                db.setDatabaseName(ergebnis::dbPfad(alt));
+                bool gut = db.open();
+                QSqlQuery q(db);
+                gut = gut && q.exec(QStringLiteral("CREATE TABLE testlauf (lauf_id INTEGER PRIMARY KEY AUTOINCREMENT, protokoll TEXT,"
+                    " protokoll_datei TEXT, log_datei TEXT NOT NULL UNIQUE, build_exe TEXT, build_timestamp TEXT, started TEXT,"
+                    " finished TEXT, pass INTEGER, fail INTEGER, skip INTEGER, open INTEGER, pass_remark INTEGER)"));
+                gut = gut && q.exec(QStringLiteral("CREATE TABLE testschritt (lauf_id INTEGER NOT NULL, step_id TEXT NOT NULL, section TEXT,"
+                    " title TEXT, result TEXT, remark TEXT, screenshots TEXT, history TEXT, PRIMARY KEY (lauf_id, step_id))"));
+                gut = gut && q.exec(QStringLiteral("INSERT INTO testlauf (protokoll, log_datei, build_timestamp, started, pass, fail, skip, open, pass_remark) VALUES"
+                    " ('Liste', 'C:/alt/Studio-Testlogs/Liste_20260613-122846.testlog.json', '2026-06-01T08:00:00', '2026-06-13T12:28:46', 2, 0, 0, 5, 0),"
+                    " ('Liste', 'D:/kopie/Studio-Testlogs/Liste_20260613-122846.testlog.json', '2026-06-01T08:00:00', '2026-06-13T12:28:46', 3, 0, 0, 4, 0),"
+                    " ('Liste', 'C:/alt/Studio-Testlogs/Liste_20260901-101010.testlog.json', '2026-09-01T14:14:08', '2026-09-01T10:10:10', 1, 0, 0, 6, 0)"));
+                gut = gut && q.exec(QStringLiteral("INSERT INTO testschritt (lauf_id, step_id, result) VALUES"
+                    " (1, 'a-01', 'pass'), (2, 'a-01', 'fail'), (3, 'a-02', 'pass')"));
+                pruefe(gut, QStringLiteral("Ergebnis-DB: Bestand wie aus dem Comm Studio angelegt"));
+                db.close();
+            }
+            QSqlDatabase::removeDatabase(QStringLiteral("selbsttest_alt"));
+            l = ergebnis::laeufe(alt, QStringLiteral("Liste"));
+            bool namen = l.size() == 2;
+            for (const ergebnis::LaufZeile& z : std::as_const(l)) namen = namen && !z.logDatei.contains(QLatin1Char('/'));
+            pruefe(namen && l.last().logDatei == QLatin1String("Liste_20260613-122846.testlog.json") && l.last().pass == 3,
+                   QStringLiteral("Ergebnis-DB: Bestandszeilen werden einmalig auf den Namen umgestellt; bei doppeltem Namen bleibt die jüngere"));
+            letzte = ergebnis::letzteErgebnisse(alt);
+            pruefe(letzte.value(QStringLiteral("a-01")).ergebnis == QLatin1String("fail")
+                   && letzte.value(QStringLiteral("a-02")).buildStempel == QLatin1String("2026-09-01T14:14:08"),
+                   QStringLiteral("Ergebnis-DB: die Schritte der verworfenen Zeile sind mit ihr gegangen; ohne Build am Urteil gilt der des Laufs"));
+
+            // 3. Spiegeln trifft die umgestellte Zeile (kein zweiter Lauf); Vorbereitungen bleiben draußen.
+            const QJsonObject log{
+                { QStringLiteral("protocol"), QStringLiteral("Liste") }, { QStringLiteral("started"), QStringLiteral("2026-09-01T10:10:10") },
+                { QStringLiteral("build"), QJsonObject{ { QStringLiteral("exe_timestamp"), QStringLiteral("2026-10-10T20:00:00") } } },
+                { QStringLiteral("summary"), QJsonObject{ { QStringLiteral("pass"), 1 }, { QStringLiteral("fail"), 1 }, { QStringLiteral("open"), 5 } } },
+                { QStringLiteral("steps"), QJsonArray{
+                      QJsonObject{ { QStringLiteral("id"), QStringLiteral("V0") }, { QStringLiteral("kind"), QStringLiteral("prep") }, { QStringLiteral("result"), QStringLiteral("prep") } },
+                      QJsonObject{ { QStringLiteral("id"), QStringLiteral("a-02") }, { QStringLiteral("result"), QStringLiteral("fail") },
+                                   { QStringLiteral("build"), QJsonObject{ { QStringLiteral("exe_timestamp"), QStringLiteral("2026-10-09T09:09:09") } } } } } } };
+            const QString fehler = ergebnis::spiegele(QDir(alt).filePath(QStringLiteral("LISTE_20260901-101010.testlog.json")), log);
+            l = ergebnis::laeufe(alt, QStringLiteral("Liste"));
+            letzte = ergebnis::letzteErgebnisse(alt);
+            bool ohneV0 = true;
+            const QList<ergebnis::SchrittSumme> summen = ergebnis::schrittSummen(alt);
+            for (const ergebnis::SchrittSumme& s : summen) ohneV0 = ohneV0 && s.id != QLatin1String("V0");
+            pruefe(fehler.isEmpty() && l.size() == 2 && l.first().fail == 1 && ohneV0
+                   && letzte.value(QStringLiteral("a-02")).ergebnis == QLatin1String("fail")
+                   && letzte.value(QStringLiteral("a-02")).buildStempel == QLatin1String("2026-10-09T09:09:09"),
+                   QStringLiteral("Ergebnis-DB: Spiegeln findet den Lauf über den Namen (ohne Groß/Klein), Vorbereitungen nicht, Build am Urteil gilt (»%1«)").arg(fehler));
+
+            // 4. Statistik und Ansehen: der abgeschlossene Lauf der ersten Liste.
+            setzeOrdner(d.absolutePath(), liste);
+            m_statistikImTest = true;
+            zeigeStatistik(false);
+            const QString fertig = m_statLaeufe && m_statLaeufe->rowCount() == 1 ? QDir(ablage).filePath(m_statLaeufe->item(0, 7)->text()) : QString();
+            pruefe(!fertig.isEmpty() && m_statSchritte->rowCount() == 4 && m_statSchritte->item(0, 0)->text().startsWith(QLatin1String("B1"))
+                   && m_statLage->text().contains(QStringLiteral("1 Läufe (1 abgeschlossen)")),
+                   QStringLiteral("Statistik: ein Lauf, vier Schritte, der Fail zuerst"));
+            const QByteArray vorher = bytes(fertig);
+            m_statLaeufe->selectRow(0);
+            oeffneGewaehltenLauf();
+            pruefe(m_nurAnsehen && QFileInfo(m_logPfad) == QFileInfo(fertig) && m_kopfzeile->text().contains(QStringLiteral("(nur ansehen)"))
+                   && !m_ansehenHinweis->isHidden() && m_fortsetzenBtn->isHidden()
+                   && schritt(2).value(QStringLiteral("remark")).toString() == QStringLiteral("flackert beim Wechsel"),
+                   QStringLiteral("älterer Lauf: öffnet zum Ansehen, mit seinen Urteilen und Bemerkungen"));
+            zeige(0);
+            klicke(QStringLiteral("✗ Fail"));
+            m_bemerkung->setPlainText(QStringLiteral("darf nicht ankommen"));
+            zeige(2);
+            pruefe(m_urteil.first()->isHidden() && m_bemerkung->isReadOnly() && bytes(fertig) == vorher
+                   && ergebnis::laeufe(ablage, QStringLiteral("Selbsttest")).size() == 1,
+                   QStringLiteral("älterer Lauf: beim Ansehen wird nichts geschrieben, weder Testlog noch DB"));
+            klicke(QStringLiteral("Zurück zum aktuellen Lauf"));
+            pruefe(!m_nurAnsehen && m_ansehenHinweis->isHidden() && QFileInfo(m_logPfad) != QFileInfo(fertig),
+                   QStringLiteral("älterer Lauf: »Zurück zum aktuellen Lauf« öffnet wieder den aktuellen"));
+
+            // Ein älterer Lauf mit offenen Schritten lässt sich aus dem Ansehen heraus fortsetzen.
+            klicke(QStringLiteral("✓ Pass"));
+            const QString offener = m_logPfad;
+            oeffne(liste, true);
+            zeigeStatistik(false);
+            int zeile = -1;
+            for (int r = 0; r < m_statLaeufe->rowCount(); ++r)
+                if (m_statLaeufe->item(r, 7)->text() == QFileInfo(offener).fileName()) zeile = r;
+            m_statLaeufe->selectRow(zeile);
+            oeffneGewaehltenLauf();
+            const bool angeboten = m_nurAnsehen && !m_fortsetzenBtn->isHidden();
+            klicke(QStringLiteral("Diesen Lauf fortsetzen"));
+            zeige(findeSchritt(QStringLiteral("P4")));
+            klicke(QStringLiteral("↷ Überspringen"));
+            pruefe(m_statLaeufe->rowCount() == 2 && zeile >= 0 && angeboten && !m_nurAnsehen
+                   && leseJson(offener).value(QStringLiteral("summary")).toObject().value(QStringLiteral("skip")).toInt() == 1,
+                   QStringLiteral("älterer Lauf mit offenen Schritten: »Diesen Lauf fortsetzen« macht ihn bearbeitbar"));
         }
 
         // Der Leser allein, ohne Verbindung.
@@ -2271,6 +2581,17 @@ namespace
         bool      m_endeDurchAktion = false;  // eine Aktion mit beendet_anwendung ist gelaufen: das Ende ist gewollt
         QWidget*  m_endeHinweis = nullptr;
         QLabel*   m_endeText = nullptr;
+        bool      m_nurAnsehen = false;      // ein älterer Lauf aus der Statistik: nichts wird geschrieben
+        QWidget*  m_ansehenHinweis = nullptr;
+        QLabel*   m_ansehenText = nullptr;
+        QPushButton* m_fortsetzenBtn = nullptr;
+        QDialog*  m_statistik = nullptr;      // eigenes Fenster, erst beim ersten Öffnen gebaut
+        QLabel*   m_statLage = nullptr;
+        QTableWidget* m_statLaeufe = nullptr;
+        QTableWidget* m_statSchritte = nullptr;
+        QPushButton* m_statOeffnen = nullptr;
+        bool      m_statistikImTest = false;  // Selbsttest: füllen, ohne das Fenster zu zeigen
+        bool      m_dbGewarnt = false;        // ein Fehler der Ergebnis-DB wurde schon gemeldet
         QWidget*  m_stehtHinweis = nullptr;   // »In … steht noch: …« mit Knopf, oder die Warnung beim Fortsetzen
         QLabel*   m_stehtText = nullptr;
         QPushButton* m_stehtBtn = nullptr;

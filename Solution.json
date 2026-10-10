@@ -22,7 +22,7 @@
             "skip": false,
             "system": true,
             "package": "Qt6",
-            "components": [ "Core", "Gui", "Widgets", "Network" ],
+            "components": [ "Core", "Gui", "Widgets", "Network", "Sql" ],
             "hints": [ "${QT_ROOT}" ]
         }
     },
@@ -83,7 +83,7 @@
                 { "to": "include", "headers_of": "SichttestSteuerung",
                   "files": [ "sichttest_steuerung.h", "sichttest_steuerung.hpp", "sichttest_steuerung_qt.hpp" ] },
                 { "to": "bin", "binary_of": "SichttestSteuerung" },
-                { "to": "sichttest", "output_dir_of": "Sichttest", "exclude": [ "*.pdb", "*.ilk" ] }
+                { "to": "sichttest", "output_dir_of": "Sichttest", "exclude": [ "*.pdb", "*.ilk", "qsqlibase.dll", "qsqlmimer.dll", "qsqloci.dll", "qsqlodbc.dll", "qsqlpsql.dll" ] }
             ],
             "version_file": "packaging/VERSION.in"
         }

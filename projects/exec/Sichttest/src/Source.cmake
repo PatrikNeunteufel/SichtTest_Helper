@@ -16,6 +16,7 @@ dbg(${DBG_OFTEN}
 
 set(_local_sources
     "${CMAKE_CURRENT_LIST_DIR}/main.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/Ergebnis.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/Kanal.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/Projekt.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/Protokoll.cpp"
@@ -23,6 +24,7 @@ set(_local_sources
 )
 
 set(_local_headers
+    "${CMAKE_CURRENT_LIST_DIR}/Ergebnis.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/Kanal.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/Projekt.hpp"
     "${CMAKE_CURRENT_LIST_DIR}/Protokoll.hpp"
