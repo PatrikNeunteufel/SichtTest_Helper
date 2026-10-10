@@ -275,8 +275,10 @@ namespace
         {
             if (merkeBemerkung()) schreibe();
             // Beim Schließen eines begonnenen Laufs die Nachbereitung anbieten; läuft sie,
-            // schließt das Fenster danach von selbst.
-            if (!m_schliesstDanach && hatBewertung() && bieteNachbereitungAn())
+            // schließt das Fenster danach von selbst. Begonnen ist ein Lauf mit einer Bewertung
+            // oder wenn in dieser Sitzung eine Aktion der Vorbereitung gelaufen ist — sonst
+            // bliebe stehen, was sie hergestellt hat.
+            if (!m_schliesstDanach && (hatBewertung() || m_vorbereitet) && bieteNachbereitungAn())
             {
                 m_schliesstDanach = true;
                 e->ignore();
@@ -324,9 +326,10 @@ namespace
             auto* lay = new QVBoxLayout(this);
 
             auto* kopf = new QHBoxLayout();
-            kopf->addWidget(new QLabel(QStringLiteral("Protokoll:"), this));
+            kopf->addWidget(new QLabel(QStringLiteral("Liste wählen:"), this));
             m_combo = new QComboBox(this);
             m_combo->setFocusPolicy(Qt::StrongFocus);
+            m_combo->setToolTip(QStringLiteral("Alle Listen des Ordners oder Projekts — aufklappen, um eine andere zu öffnen."));
             kopf->addWidget(m_combo, 1);
             auto* neuLesen = new QPushButton(QStringLiteral("↻"), this);
             neuLesen->setFixedWidth(32);
@@ -704,6 +707,7 @@ namespace
             merkeSteuerung();
             m_gespeichert.clear();
             m_nachbereitet = false;
+            m_vorbereitet = false;
             m_exeDatei = findeExeDatei(m_p.exe, pfad);
             m_exeZeit = m_exeDatei.isEmpty() ? QString()
                 : QFileInfo(m_exeDatei).lastModified().toString(QStringLiteral("dd.MM.yyyy HH:mm"));
@@ -1429,6 +1433,12 @@ namespace
                 if (feld == QLatin1String("test_db")) m_p.testDb.insert(QStringLiteral("active"), true);
                 else if (feld == QLatin1String("test_db.ende")) m_p.testDb.insert(QStringLiteral("active"), false);
             }
+            // Eine gelaufene Vorbereitung hat etwas hergestellt: die Nachbereitung wird (wieder) fällig.
+            if (status == QLatin1String("ok") && m_lauf.idx >= 0 && istVorbereitung(schritt(m_lauf.idx)))
+            {
+                m_vorbereitet = true;
+                m_nachbereitet = false;
+            }
             if (m_lauf.beendet) m_endeDurchAktion = true;
             ++m_lauf.pos;
             if (m_lauf.beendet && m_lauf.pos < m_lauf.liste.size())
@@ -1885,9 +1895,16 @@ namespace
                    && text(log, 1).contains(QLatin1String("SELECT * FROM t")) && m_kopiert == QLatin1String("SELECT * FROM t"),
                    QStringLiteral("Links tab: und sql: im Text lösen die abgebildete Aktion aus; die Abfrage geht in die Zwischenablage"));
 
-            pruefe(bieteNachbereitungAn() && warteBis([&] { return !m_lauf.aktiv; }, 5000)
+            // Schließen nach bloßer Vorbereitung, ohne Bewertung: die Nachbereitung wird angeboten
+            // und läuft, bevor das Fenster schließt (Befund CS L1).
+            QCloseEvent zu;
+            const bool ohneUrteil = !hatBewertung();
+            closeEvent(&zu);
+            pruefe(ohneUrteil && !zu.isAccepted() && warteBis([&] { return !m_lauf.aktiv; }, 5000)
                    && m_p.nachbereitungLog.size() == 1 && status(m_p.nachbereitungLog, 0) == QLatin1String("ok"),
-                   QStringLiteral("Nachbereitung der Liste läuft und steht im Lauf"));
+                   QStringLiteral("Schließen nach bloßer Vorbereitung bietet die Nachbereitung an; sie läuft und steht im Lauf"));
+            QCoreApplication::processEvents();   // das Schließen danach
+            m_schliesstDanach = false;
             const QJsonObject aufPlatte = leseJson(m_logPfad);
             pruefe(QFileInfo(m_logPfad).absolutePath() == QFileInfo(wurzel.filePath(QStringLiteral("ablage/studio"))).absoluteFilePath()
                    && aufPlatte.value(QStringLiteral("teardown_actions")).toArray().size() == 1
@@ -2027,6 +2044,7 @@ namespace
         bool      m_ohneZwischenablage = false;   // nur der Selbsttest: die Zwischenablage des Menschen bleibt
         QString   m_selbsttestKanal;
         bool      m_nachbereitet = false;     // in diesem Lauf schon angeboten
+        bool      m_vorbereitet = false;      // in dieser Sitzung lief eine Aktion der Vorbereitung mit ok
         bool      m_schliesstDanach = false;
         QString   m_projektGenannt;           // ausdrücklich genannte Projektdatei (Aufruf oder hallo)
         bool      m_nichtMehrFragen = false;  // Haken der Rückfrage vor fragt_nach; gilt, bis der Tester endet

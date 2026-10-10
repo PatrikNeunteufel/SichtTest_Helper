@@ -10,7 +10,8 @@
 > den Block `steuerung` (§5), seit `v0.3.4` wird ein abgeschlossener Lauf nicht mehr fortgesetzt,
 > und `build` bleibt beim Fortsetzen erhalten (§6.4), seit `v0.3.5` setzt der Tester
 > `test_db.active`, füllt den Schlüssel `fortgesetzt` (§6.2, §7) und erlaubt der Anwendung den
-> Vordergrund (§4). Die Festlegungen, die beim
+> Vordergrund (§4), seit `v0.3.6` bietet er die Nachbereitung beim Schließen auch nach bloßer
+> Vorbereitung an (§6.2). Die Festlegungen, die beim
 > Bauen fielen (im Sync SH-15), stehen seit dem 2026-10-09 in §3, §4, §6 und §7, jeweils mit
 > „beim Bauen festgelegt" gekennzeichnet. Offen: Schritt 4 (LumiViz, der Bezug steht), Schritte 5 und 6 (Comm Studio).
 > Gezählt wird hier nach §13; im Sync heißen dieselben Abschnitte nach der Freigabe „3 und 4"
@@ -108,7 +109,7 @@ typedef struct {
 /* Fassungen der DLL, ohne Sitzung abfragbar. */
 void       sts_fassung(uint16_t* s_major, uint16_t* s_minor,
                        uint16_t* p_major_min, uint16_t* p_major_max,
-                       const char** produkt);                 /* "0.3.5" = Tag des Repos ohne v */
+                       const char** produkt);                 /* "0.3.6" = Tag des Repos ohne v */
 
 /* Sitzung anlegen; prüft S (§5). Öffnet noch nichts. Scheitert es, gibt es keine Sitzung;
    den Grund nennt dann sts_letzter_fehler(NULL). */
@@ -290,7 +291,7 @@ Dialog der Aktion hinter dem Tester. Nach vorn holen muss sich die Anwendung sel
 |---|---|---|---|
 | **P** — Protokoll Tester ↔ DLL, `groß.klein` | in Tester und DLL einkompiliert | beim Verbinden (`hallo`) | Tester |
 | **S** — Schnittstelle DLL ↔ Anwendung, `groß.klein` | `STS_S_MAJOR/MINOR` im Kopf, also in der Anwendung; in der DLL; die große Nummer zusätzlich **im Dateinamen** `SichttestSteuerung1.dll` | beim Laden (`sts_oeffne`) | DLL |
-| **Produkt** — Tag des Repos, etwa `v0.3.5` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
+| **Produkt** — Tag des Repos, etwa `v0.3.6` | `Solution.json`, Git-Tag | gar nicht zur Laufzeit; das ist der **Pin** der Anwendung | — |
 
 **Was die große, was die kleine Nummer ändert**
 
@@ -387,7 +388,11 @@ Neu, allgemein:
 ```
 
 Dazu `"nachbereitung": [ … ]` an der Wurzel: Aktionen, die der Tester am Ende des Laufs anbietet
-(bei FERTIG und beim Schließen), nie während er auf eine neu startende Anwendung wartet. Im
+(bei FERTIG und beim Schließen), nie während er auf eine neu startende Anwendung wartet. Beim
+Schließen bietet er sie an, wenn der Lauf eine Bewertung trägt **oder in dieser Sitzung eine Aktion
+der Vorbereitung mit `ok` gelaufen ist** (ab `v0.3.6`, Befund CS L1 — sonst bliebe stehen, was die
+Vorbereitung hergestellt hat); läuft die Vorbereitung nach einer Nachbereitung erneut, wird die
+Nachbereitung wieder fällig. Im
 Testlog stehen ihre ausgelösten Aktionen an der Wurzel unter `teardown_actions`, in derselben Form
 wie `actions[]` eines Schritts.
 
@@ -649,7 +654,7 @@ sichttest-vX.Y.Z-win64/
 ├── include/   sichttest_steuerung.h · sichttest_steuerung.hpp · sichttest_steuerung_qt.hpp
 ├── bin/       SichttestSteuerung1.dll
 ├── sichttest/ Sichttest.exe mit seinem Qt
-└── VERSION    drei Zeilen: produkt=0.3.5 · s=1.0 · p=1
+└── VERSION    drei Zeilen: produkt=0.3.6 · s=1.0 · p=1
 ```
 
 Gebaut wird das Paket nur als Release, ohne `.pdb`. Verbindlich stehen S und P im Kopf
@@ -664,7 +669,7 @@ beim Bauen als Define `STS_PRODUKT` aus `Solution.json`, die Anwendung fragt sie
 sich mit jedem Schnüren, auch bei gleichem Inhalt:
 
 ```cmake
-set(SICHTTEST_VERSION "v0.3.5")
+set(SICHTTEST_VERSION "v0.3.6")
 set(SICHTTEST_URL     "https://github.com/PatrikNeunteufel/SichtTest_Helper/releases/download/${SICHTTEST_VERSION}/sichttest-${SICHTTEST_VERSION}-win64.zip")
 set(SICHTTEST_SHA256  "<64 Hex-Zeichen>")
 set(SICHTTEST_FALLBACK_PATHS "../SichtTest_Helper/out/package")

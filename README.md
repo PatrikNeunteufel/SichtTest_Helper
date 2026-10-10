@@ -205,6 +205,10 @@ Liste. Der Schlüssel **`fortgesetzt`** ist vorbelegt: ihn füllt das Werkzeug b
 Vor jedem Aufruf erlaubt das Werkzeug der Anwendung, ihr Fenster oder einen Dialog nach vorn
 zu holen.
 
+Die Nachbereitung einer Liste bietet das Werkzeug an, wenn der letzte Punkt bewertet ist, und
+beim Schließen — dort auch dann, wenn noch nichts bewertet, aber schon eine Aktion der
+Vorbereitung gelaufen ist.
+
 ## Was es schreibt
 
 Neben die Liste, in den Unterordner `sichttest-logs/` — oder in die Ablage, die das Projekt
