@@ -34,7 +34,8 @@ namespace sichttest
         QString      startExe;         // absolut; leer = der Mensch startet sie
         QStringList  startArgumente;
         QList<Liste> listen;
-        QJsonObject  gewichtung;       // gelesen, noch ohne Wirkung (§14 Stufe 4)
+        QJsonObject  gewichtung;       // { hand[], git[] }: Dateien des Nachtest-Indikators, ab Root (Indikator.hpp)
+        bool         gewichtungGenannt = false;   // der Schlüssel steht da (auch leer): es gibt einen Indikator
         QJsonObject  abbildung;        // Feld des JSON-Formats → "aktion schlüssel …"
 
         bool gueltig() const { return !pfad.isEmpty(); }

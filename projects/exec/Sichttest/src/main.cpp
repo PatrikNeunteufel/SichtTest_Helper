@@ -12,6 +12,7 @@
 //          Sichttest --steuerung [datei|ordner]       (so startet ihn die DLL der Anwendung)
 
 #include "Ergebnis.hpp"
+#include "Indikator.hpp"
 #include "Projekt.hpp"
 #include "Protokoll.hpp"
 #include "Steuerung.hpp"
@@ -267,6 +268,7 @@ namespace
 
             selbsttestBuild(d, pruefe, klicke);
             selbsttestErgebnis(d, pruefe, klicke);
+            selbsttestIndikator(d, pruefe, klicke);
             selbsttestListen(d, pruefe);
 #ifdef Q_OS_WIN
             fehler += selbsttestSteuerung(aus);
@@ -370,6 +372,11 @@ namespace
             linksLay->addWidget(m_liste, 1);
             m_nurOffene = new QCheckBox(QStringLiteral("Nur offene und Fail zeigen"), links);
             linksLay->addWidget(m_nurOffene);
+            // Nachtest-Indikator (§14.1 Teil C): offene Schritte ohne Nachtest-Bedarf überspringen.
+            m_autoSkip = new QPushButton(links);
+            m_autoSkip->hide();
+            linksLay->addWidget(m_autoSkip);
+            connect(m_autoSkip, &QPushButton::clicked, this, [this]() { ueberspringeUnkritische(); });
 
             auto* rechts = new QWidget(split);
             auto* col = new QVBoxLayout(rechts);
@@ -381,6 +388,11 @@ namespace
             col->addWidget(m_titel);
             m_stand = new QLabel(rechts);
             col->addWidget(m_stand);
+            m_warum = new QLabel(rechts);   // Begründung des Nachtest-Indikators
+            m_warum->setWordWrap(true);
+            m_warum->setStyleSheet(QStringLiteral("color:#8a8a8a;"));
+            m_warum->hide();
+            col->addWidget(m_warum);
 
             m_text = new QTextBrowser(rechts);
             // Links `tab:<Titel>` und `sql:<Abfrage>` der Listen des Comm Studio lösen Aktionen aus.
@@ -666,14 +678,15 @@ namespace
             const QStringList pfade = pr.gueltig() ? protokolleDesProjekts(pr)
                                     : ordner.isEmpty() || !projektFehler.isEmpty() ? QStringList()
                                     : findeProtokolle(ordner);
+            const indikator::Gewichtung gewichtung = indikator::lade(pr);
             for (const QString& p : pfade)
             {
                 const Protokoll kurz = lade(p);
                 const Zaehler z = zaehleMitLauf(kurz);
-                m_combo->addItem(QStringLiteral("%1   ·   ○ %2  ✗ %3   (%4)")
+                m_combo->addItem(QStringLiteral("%1   ·   ○ %2  ✗ %3%4   (%5)")
                                      .arg(pr.gueltig() ? QDir(pr.root).relativeFilePath(p) : QFileInfo(p).fileName())
                                      .arg(z.offen).arg(z.fail)
-                                     .arg(kurz.titel), p);
+                                     .arg(markenDerListe(kurz, gewichtung), kurz.titel), p);
             }
             if (pfade.isEmpty())
             {
@@ -696,6 +709,33 @@ namespace
             if (i < 0) i = 0;
             m_combo->setCurrentIndex(i);
             oeffne(m_combo->itemData(i).toString(), false);
+        }
+
+        // Für die Listenwahl: wie viele offene Schritte der Liste dringend (🔴) oder empfohlen (🟡)
+        // nachzutesten sind — gegen den Lauf, den das Öffnen zeigen würde.
+        static QString markenDerListe(Protokoll p, const indikator::Gewichtung& gewichtung)
+        {
+            if (!gewichtung.aktiv) return {};
+            const QString lauf = neuesterLauf(p.pfad);
+            if (!lauf.isEmpty())
+            {
+                const QJsonObject log = leseJson(lauf);
+                if (!istAbgeschlossen(log)) uebernimmLauf(p, log);
+            }
+            const QHash<QString, ergebnis::LetztesErgebnis> letzte = ergebnis::letzteErgebnisse(logOrdner(p.pfad));
+            int rot = 0, gelb = 0;
+            for (const QJsonValue& v : std::as_const(p.schritte))
+            {
+                const QJsonObject s = v.toObject();
+                if (s.value(QStringLiteral("result")).toString() != QLatin1String("open") || istVerwaist(s)) continue;
+                const double u = indikator::bewerte(s, gewichtung, letzte).u;
+                if (u >= indikator::kRot) ++rot;
+                else if (u >= indikator::kGelb) ++gelb;
+            }
+            QString t;
+            if (rot > 0) t += QStringLiteral("  %1🔴").arg(rot);
+            if (gelb > 0) t += QStringLiteral("  %1🟡").arg(gelb);
+            return t;
         }
 
         static Zaehler zaehleMitLauf(Protokoll p)
@@ -779,6 +819,15 @@ namespace
                   : vorigerFertig ? QStringLiteral(" · neuer Lauf (der vorige vom %1 ist abgeschlossen)")
                                         .arg(log.value(QStringLiteral("started")).toString())
                                   : QStringLiteral(" · neuer Lauf");
+            // Fortgesetzt gegen einen anderen Build als den, den das Testlog nennt (Befund CS B7):
+            // was die alten Urteile dann noch gelten, zeigt der Nachtest-Indikator.
+            const QString alterBuild = log.value(QStringLiteral("build")).toObject().value(QStringLiteral("exe_timestamp")).toString();
+            const QString neuerBuild = aktuellerBuild().value(QStringLiteral("exe_timestamp")).toString();
+            if (!lauf.isEmpty() && !m_nurAnsehen && !alterBuild.isEmpty() && !neuerBuild.isEmpty() && alterBuild != neuerBuild)
+                kopf += QStringLiteral("<br><span style='color:#c9a227;'>⚠ Der Lauf lief zuletzt gegen den Build vom %1, "
+                                       "jetzt gilt der vom %2.</span>")
+                            .arg(QString(alterBuild).left(16).replace(QLatin1Char('T'), QLatin1Char(' ')),
+                                 QString(neuerBuild).left(16).replace(QLatin1Char('T'), QLatin1Char(' ')));
             for (const QString& h : std::as_const(m_p.hinweise))
                 kopf += QStringLiteral("<br><span style='color:#d64545;'>⚠ %1</span>").arg(h.toHtmlEscaped());
             m_kopfzeile->setText(kopf);
@@ -788,6 +837,7 @@ namespace
             m_neuFrist.stop();
             m_aktionStand->clear();
             m_idx = -1;
+            rechneIndikator();
             fuelleListe();
             const int erster = naechsterOffene(-1);
             zeige(erster >= 0 ? mitVorbereitung(erster, -1) : 0);
@@ -797,6 +847,119 @@ namespace
             zeigeStehendes();
             zeigeAnsehen();
             zeigeStatistik(false);
+        }
+
+        // --- Nachtest-Indikator (§14.1 Teil C) ----------------------------------
+
+        // Gewichtung des Projekts lesen und je Schritt die Dringlichkeit rechnen. Das letzte
+        // Ergebnis je Kennung kommt aus der Ergebnis-DB der Ablage, über alle Listen.
+        void rechneIndikator()
+        {
+            m_dringlich.clear();
+            m_gewichtung = indikator::lade(projekt());
+            if (m_gewichtung.aktiv && !m_p.pfad.isEmpty())
+            {
+                const QHash<QString, ergebnis::LetztesErgebnis> letzte = ergebnis::letzteErgebnisse(logOrdner(m_p.pfad));
+                for (const QJsonValue& v : std::as_const(m_p.schritte))
+                    m_dringlich.insert(v.toObject().value(QStringLiteral("id")).toString(),
+                                       indikator::bewerte(v.toObject(), m_gewichtung, letzte));
+            }
+            zeigeAutoSkip();
+        }
+
+        static bool istAutoSkip(const QJsonObject& s)
+        {
+            return s.value(QStringLiteral("result")).toString() == QLatin1String("skip")
+                   && (s.value(QStringLiteral("auto_skip")).toBool()
+                       || s.value(QStringLiteral("remark")).toString().startsWith(QLatin1String("Auto-Skip (")));
+        }
+
+        // Offene Schritte ohne Nachtest-Bedarf (Dringlichkeit unter 0,3).
+        QList<int> unkritische() const
+        {
+            QList<int> treffer;
+            for (int n = 0; n < m_p.schritte.size(); ++n)
+            {
+                const QJsonObject s = schritt(n);
+                if (s.value(QStringLiteral("result")).toString() != QLatin1String("open") || istVerwaist(s)) continue;
+                const double u = m_dringlich.value(s.value(QStringLiteral("id")).toString()).u;
+                if (u >= 0.0 && u < indikator::kGelb) treffer.append(n);
+            }
+            return treffer;
+        }
+
+        void zeigeAutoSkip()
+        {
+            if (!m_autoSkip) return;
+            m_autoSkip->setVisible(m_gewichtung.aktiv && !m_p.pfad.isEmpty());
+            int zurueck = 0;
+            for (const QJsonValue& v : std::as_const(m_p.schritte))
+                if (istAutoSkip(v.toObject())) ++zurueck;
+            if (zurueck > 0)
+            {
+                m_autoSkip->setText(QStringLiteral("↺ Übersprungene wieder aufnehmen (%1)").arg(zurueck));
+                m_autoSkip->setToolTip(QStringLiteral("Setzt die Schritte, die »Unkritische überspringen« markiert hat, wieder auf offen. "
+                                                      "Von Hand übersprungene bleiben."));
+                m_autoSkip->setEnabled(!m_nurAnsehen);
+                return;
+            }
+            const int n = int(unkritische().size());
+            m_autoSkip->setText(QStringLiteral("↷ Unkritische überspringen (%1)").arg(n));
+            m_autoSkip->setToolTip(QStringLiteral("Markiert alle offenen Schritte ohne Nachtest-Bedarf als übersprungen (letzter Test Pass, "
+                                                  "seither keine Änderung an den Areas des Schritts). 🔴 und 🟡 bleiben offen. "
+                                                  "Übersprungene zählen nicht als verifiziert."));
+            m_autoSkip->setEnabled(n > 0 && !m_nurAnsehen);
+        }
+
+        void ueberspringeUnkritische()
+        {
+            if (m_nurAnsehen || m_lauf.aktiv) return;
+            merkeBemerkung();
+            bool zurueck = false;
+            for (int n = 0; n < m_p.schritte.size(); ++n)
+            {
+                QJsonObject s = schritt(n);
+                if (!istAutoSkip(s)) continue;
+                s.insert(QStringLiteral("result"), QStringLiteral("open"));
+                s.insert(QStringLiteral("remark"), QString());
+                s.remove(QStringLiteral("auto_skip"));
+                s.remove(QStringLiteral("rated"));
+                m_p.schritte.replace(n, s);
+                zurueck = true;
+            }
+            if (!zurueck)
+            {
+                const QList<int> treffer = unkritische();
+                if (treffer.isEmpty()) return;
+                QStringList titel;
+                for (int n : treffer) titel.append(schritt(n).value(QStringLiteral("title")).toString());
+                if (!m_ohneRueckfrage
+                    && QMessageBox::question(this, QStringLiteral("Unkritische überspringen"),
+                           QStringLiteral("%1 offene Schritte ohne Nachtest-Bedarf als »übersprungen« markieren?\n\n• %2\n\n"
+                                          "Übersprungene zählen nicht als verifiziert — der nächste Lauf rechnet weiter mit dem "
+                                          "letzten echten Ergebnis.").arg(treffer.size()).arg(titel.join(QStringLiteral("\n• "))))
+                       != QMessageBox::Yes)
+                    return;
+                for (int n : treffer)
+                {
+                    QJsonObject s = schritt(n);
+                    const indikator::Dringlichkeit d = m_dringlich.value(s.value(QStringLiteral("id")).toString());
+                    s.insert(QStringLiteral("result"), QStringLiteral("skip"));
+                    s.insert(QStringLiteral("remark"), QStringLiteral("Auto-Skip (Nachtest-Indikator %1): %2").arg(d.u, 0, 'f', 1).arg(d.warum));
+                    s.insert(QStringLiteral("auto_skip"), true);
+                    s.insert(QStringLiteral("rated"), QDateTime::currentDateTime().toString(QStringLiteral("dd.MM. HH:mm")));
+                    m_p.schritte.replace(n, s);
+                }
+            }
+            schreibe();
+            const int gezeigt = m_idx;
+            m_idx = -1;
+            fuelleListe();
+            const int weiter = naechsterOffene(-1);
+            zeige(weiter >= 0 ? mitVorbereitung(weiter, -1) : qMax(0, gezeigt));
+            zeigeAutoSkip();
+            zeigeStehendes();
+            if (zaehle(m_p.schritte).offen == 0) bieteNachbereitungAn();
         }
 
         // Die Zeile für einen nur angesehenen Lauf; sein Inhalt lässt sich nicht ändern.
@@ -822,6 +985,7 @@ namespace
             m_kopfzeile->setText(kopf);
             zeigeAnsehen();
             aktualisiereAktionen();
+            zeigeAutoSkip();
         }
 
         // --- Statistik (§14.1 Teil B) -------------------------------------------
@@ -841,7 +1005,7 @@ namespace
                 m_statLage->setWordWrap(true);
                 lay->addWidget(m_statLage);
                 m_statLaeufe = new QTableWidget(0, 8, m_statistik);
-                m_statLaeufe->setHorizontalHeaderLabels({ QStringLiteral("Start"), QStringLiteral("Build"),
+                m_statLaeufe->setHorizontalHeaderLabels({ QStringLiteral("Start"), QStringLiteral("Build (zuletzt)"),
                     QStringLiteral("✓"), QStringLiteral("✓⚠"), QStringLiteral("✗"), QStringLiteral("↷"),
                     QStringLiteral("○"), QStringLiteral("Testlog") });
                 m_statLaeufe->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -917,12 +1081,18 @@ namespace
             int verifiziert = 0;
             for (auto it = titel.constBegin(); it != titel.constEnd(); ++it)
                 if (letzte.contains(it.key())) ++verifiziert;
+            int dringend = 0;
+            for (const QJsonValue& v : std::as_const(m_p.schritte))
+                if (v.toObject().value(QStringLiteral("result")).toString() == QLatin1String("open")
+                    && m_dringlich.value(v.toObject().value(QStringLiteral("id")).toString()).u >= indikator::kRot)
+                    ++dringend;
             m_statLage->setText(QStringLiteral("<b>%1</b> — %2 Läufe (%3 abgeschlossen) über %4 Build-Stände · "
-                                               "%5 von %6 Schritten je verifiziert<br>"
+                                               "%5 von %6 Schritten je verifiziert%8<br>"
                                                "<span style='color:#8a8a8a;'>%7</span>")
                 .arg(m_p.titel.toHtmlEscaped()).arg(laeufe.size()).arg(fertig).arg(builds.size())
                 .arg(verifiziert).arg(titel.size())
-                .arg(QDir::toNativeSeparators(ergebnis::dbPfad(ablage)).toHtmlEscaped()));
+                .arg(QDir::toNativeSeparators(ergebnis::dbPfad(ablage)).toHtmlEscaped())
+                .arg(m_gewichtung.aktiv ? QStringLiteral(" · aktuell %1 offene 🔴-Nachtests").arg(dringend) : QString()));
         }
 
         void oeffneGewaehltenLauf()
@@ -983,8 +1153,12 @@ namespace
             const QString r = s.value(QStringLiteral("result")).toString();
             const bool bild = !s.value(QStringLiteral("screenshots")).toArray().isEmpty();
             const bool text = !s.value(QStringLiteral("remark")).toString().trimmed().isEmpty();
+            // Nachtest-Indikator: 🔴 dringend, 🟡 empfohlen — nur an offenen Schritten.
+            const QString marke = r == QLatin1String("open")
+                ? indikator::marke(m_dringlich.value(s.value(QStringLiteral("id")).toString()).u) : QString();
             it->setText(QStringLiteral("%1  %2  %3%4%5")
-                .arg(zeichen(r), s.value(QStringLiteral("id")).toString(),
+                .arg(zeichen(r) + (marke.isEmpty() ? QString() : QLatin1Char(' ') + marke),
+                     s.value(QStringLiteral("id")).toString(),
                      s.value(QStringLiteral("title")).toString(),
                      text ? QStringLiteral("  ✎") : QString(),
                      bild ? QStringLiteral("  🖼") : QString()));
@@ -1049,6 +1223,10 @@ namespace
             m_stand->setText(t);
             const QString f = farbe(r);
             m_stand->setStyleSheet(f.isEmpty() ? QString() : QStringLiteral("color:%1;").arg(f));
+            const indikator::Dringlichkeit d = m_dringlich.value(s.value(QStringLiteral("id")).toString());
+            m_warum->setVisible(d.u >= 0.0 && !d.warum.isEmpty() && !istVorbereitung(s));
+            const QString marke = indikator::marke(d.u);
+            m_warum->setText((marke.isEmpty() ? QString() : marke + QLatin1Char(' ')) + QStringLiteral("Nachtest: ") + d.warum);
         }
 
         void zeigeBilder(const QJsonObject& s)
@@ -1108,6 +1286,7 @@ namespace
             m_p.schritte.replace(m_idx, s);
             schreibe();
             zeigeStehendes();
+            zeigeAutoSkip();
             if (QListWidgetItem* it = eintrag(m_idx)) beschrifte(it, s);
             // FERTIG: die Nachbereitung der Liste anbieten (§6.2).
             if (zaehle(m_p.schritte).offen == 0) bieteNachbereitungAn();
@@ -1405,7 +1584,9 @@ namespace
                 m_p.testDb.insert(QStringLiteral("active"), s == 1);
                 anders = true;
             }
-            if (anders && !m_lauf.aktiv && QFileInfo::exists(m_logPfad)) schreibe();
+            // Geschrieben wird hier nicht: das Öffnen einer Liste und das Verbinden einer Anwendung
+            // ändern kein Testlog. Der Stand geht mit dem nächsten Urteil oder der nächsten Aktion hinaus.
+            Q_UNUSED(anders);
         }
 
         int testDbStand() const
@@ -2081,6 +2262,103 @@ namespace
                    QStringLiteral("älterer Lauf mit offenen Schritten: »Diesen Lauf fortsetzen« macht ihn bearbeitbar"));
         }
 
+        // Nachtest-Indikator, »Unkritische überspringen« und die Listenwahl (§14.1 Teil C).
+        void selbsttestIndikator(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
+        {
+            // 1. Die Rechnung allein.
+            indikator::Gewichtung g;
+            g.aktiv = true;
+            g.hand = QJsonDocument::fromJson(QByteArray(R"({
+                "auto_weight": 0.5,
+                "retest_steps": { "s-nach": "Fix prüfen" },
+                "areas": { "tag":  { "weight": 0.8, "changed": "2026-09-02", "note": "tageweise" },
+                           "uhr":  { "weight": 0.9, "changed": "2026-09-01T15:00:00" },
+                           "leise": { "weight": 0.2, "changed": "2026-09-02" },
+                           "eigen": { "weight": 0.1, "changed": "2026-01-01", "auto_weight": 0.7 } } })")).object();
+            g.git = QJsonDocument::fromJson(QByteArray(R"({
+                "areas": { "code":  { "changed": "2026-09-01T16:00:00+02:00", "commit": "abc", "file": "a.cpp" },
+                           "alt":   { "changed": "2026-08-01T16:00:00+02:00" },
+                           "eigen": { "changed": "2026-09-05T10:00:00+02:00" } } })")).object();
+            const QHash<QString, ergebnis::LetztesErgebnis> letzte{
+                { QStringLiteral("s-fail"), { QStringLiteral("fail"), QStringLiteral("2026-09-01T10:00:00"), QStringLiteral("2026-09-01T14:00:00") } },
+                { QStringLiteral("s-nach"), { QStringLiteral("pass"), QStringLiteral("2026-09-01T10:00:00"), QStringLiteral("2026-09-01T14:00:00") } },
+                { QStringLiteral("s-pass"), { QStringLiteral("pass"), QStringLiteral("2026-09-01T10:00:00"), QStringLiteral("2026-09-01T14:00:00") } },
+                { QStringLiteral("s-spaet"), { QStringLiteral("pass_remark"), QStringLiteral("2026-09-02T10:00:00"), QStringLiteral("2026-09-02T09:00:00") } } };
+            auto u = [&](const char* id, const QStringList& areas, bool prep = false) {
+                QJsonObject s{ { QStringLiteral("id"), QLatin1String(id) }, { QStringLiteral("areas"), QJsonArray::fromStringList(areas) } };
+                if (prep) s.insert(QStringLiteral("kind"), QStringLiteral("prep"));
+                return indikator::bewerte(s, g, letzte).u;
+            };
+            pruefe(u("s-neu", {}) == 1.0 && u("s-fail", {}) == 1.0 && u("s-nach", {}) == 1.0 && u("s-prep", {}, true) == 0.0,
+                   QStringLiteral("Indikator: nie verifiziert, letzter Fail und retest_steps sind 1,0; eine Vorbereitung ist 0"));
+            pruefe(u("s-pass", { QStringLiteral("tag") }) == 0.8 && u("s-spaet", { QStringLiteral("tag") }) == 0.0
+                   && u("s-pass", { QStringLiteral("leise"), QStringLiteral("tag") }) == 0.8,
+                   QStringLiteral("Indikator: Hand-Schicht tageweise — Änderung nach dem Tag des Laufs zählt, am selben Tag nicht; das höchste Gewicht gilt"));
+            pruefe(u("s-pass", { QStringLiteral("uhr") }) == 0.9 && u("s-spaet", { QStringLiteral("uhr") }) == 0.0,
+                   QStringLiteral("Indikator: Hand-Schicht mit Uhrzeit — verglichen wird gegen den Build am Urteil"));
+            pruefe(u("s-pass", { QStringLiteral("code") }) == 0.5 && u("s-pass", { QStringLiteral("alt") }) == 0.0
+                   && u("s-pass", { QStringLiteral("eigen") }) == 0.7 && u("s-pass", { QStringLiteral("tag"), QStringLiteral("code") }) == 0.8,
+                   QStringLiteral("Indikator: git-Schicht hebt auf auto_weight (Area vor Wurzel), ältere Commits nicht, und senkt nie"));
+            pruefe(indikator::marke(0.7) == QStringLiteral("🔴") && indikator::marke(0.3) == QStringLiteral("🟡")
+                   && indikator::marke(0.29).isEmpty() && u("s-pass", {}) == 0.0,
+                   QStringLiteral("Indikator: 🔴 ab 0,7, 🟡 ab 0,3, darunter unkritisch"));
+            g.aktiv = false;
+            pruefe(u("s-neu", {}) < 0.0, QStringLiteral("Indikator: ohne gewichtung in der Projektdatei gibt es keinen"));
+
+            // 2. Im Fenster: ein Projekt mit Gewichtung in zwei Dateien.
+            const QDir wurzel(d.filePath(QStringLiteral("projekt-ind")));
+            QDir(wurzel.absolutePath()).removeRecursively();
+            const QString liste = wurzel.filePath(QStringLiteral("listen/ind.testprotokoll.json"));
+            bool geschrieben = schreibeDatei(wurzel.filePath(QStringLiteral(".sichttest/sichttest.projekt.json")), QByteArray(R"({
+                "schema": 1, "listen": [ { "ordner": "listen" } ],
+                "gewichtung": { "hand": [ "gew/eins.json", "gew/zwei.json", "gew/fehlt.json" ], "git": [ "gew/git.json" ] } })"));
+            geschrieben = geschrieben && schreibeDatei(wurzel.filePath(QStringLiteral("gew/eins.json")), QByteArray(R"({
+                "areas": { "a": { "weight": 0.2, "changed": "2099-01-01" }, "b": { "weight": 0.2, "changed": "2099-01-01" } } })"));
+            geschrieben = geschrieben && schreibeDatei(wurzel.filePath(QStringLiteral("gew/zwei.json")), QByteArray(R"({
+                "areas": { "a": { "weight": 0.8, "changed": "2099-01-01", "note": "zweite Datei" } } })"));
+            geschrieben = geschrieben && schreibeDatei(liste, QByteArray(R"({
+                "title": "Indikator", "steps": [
+                  { "id": "i-01", "section": "A", "title": "Eins", "text": "…", "areas": ["a"] },
+                  { "id": "i-02", "section": "A", "title": "Zwei", "text": "…", "areas": ["b"] },
+                  { "id": "i-03", "section": "A", "title": "Drei", "text": "…", "areas": [] } ] })"));
+            pruefe(geschrieben, QStringLiteral("Indikator: Projekt mit Gewichtung angelegt"));
+            m_ohneRueckfrage = true;
+            ergebnis::schliesse();
+            setzeOrdner(wurzel.filePath(QStringLiteral("listen")), liste);
+            pruefe(m_gewichtung.aktiv && m_dringlich.value(QStringLiteral("i-01")).u == 1.0
+                   && eintrag(0) && eintrag(0)->text().contains(QStringLiteral("🔴"))
+                   && !m_warum->isHidden() && m_warum->text().contains(QStringLiteral("noch nie verifiziert"))
+                   && !m_autoSkip->isHidden() && !m_autoSkip->isEnabled()
+                   && m_combo->itemText(0).contains(QStringLiteral("3🔴")),
+                   QStringLiteral("Indikator im Fenster: neue Liste — drei 🔴, Begründung am Schritt, Listenwahl zählt mit"));
+            klicke(QStringLiteral("✓ Pass"));
+            klicke(QStringLiteral("✓ Pass"));
+            klicke(QStringLiteral("✓ Pass"));
+            setzeOrdner(wurzel.filePath(QStringLiteral("listen")), liste);
+            pruefe(m_dringlich.value(QStringLiteral("i-01")).u == 0.8 && m_dringlich.value(QStringLiteral("i-02")).u == 0.2
+                   && m_dringlich.value(QStringLiteral("i-03")).u == 0.0
+                   && m_dringlich.value(QStringLiteral("i-01")).warum.contains(QStringLiteral("zweite Datei"))
+                   && m_combo->itemText(0).contains(QStringLiteral("1🔴")) && !m_combo->itemText(0).contains(QStringLiteral("🟡"))
+                   && m_autoSkip->isEnabled() && m_autoSkip->text() == QStringLiteral("↷ Unkritische überspringen (2)"),
+                   QStringLiteral("Indikator im Fenster: nach drei Pass gilt die Gewichtung — zwei Dateien verschmolzen, die zweite überlagert, eine fehlende stört nicht"));
+            m_autoSkip->click();
+            const QJsonObject zwei = schritt(findeSchritt(QStringLiteral("i-02")));
+            pruefe(zwei.value(QStringLiteral("result")).toString() == QLatin1String("skip") && zwei.value(QStringLiteral("auto_skip")).toBool()
+                   && zwei.value(QStringLiteral("remark")).toString().startsWith(QStringLiteral("Auto-Skip (Nachtest-Indikator 0.2): "))
+                   && schritt(findeSchritt(QStringLiteral("i-01"))).value(QStringLiteral("result")).toString() == QLatin1String("open")
+                   && m_idx == findeSchritt(QStringLiteral("i-01"))
+                   && m_autoSkip->text() == QStringLiteral("↺ Übersprungene wieder aufnehmen (2)"),
+                   QStringLiteral("Unkritische überspringen: zwei Schritte übersprungen mit Begründung, der 🔴 bleibt offen"));
+            klicke(QStringLiteral("↷ Überspringen"));
+            m_autoSkip->click();
+            pruefe(schritt(findeSchritt(QStringLiteral("i-01"))).value(QStringLiteral("result")).toString() == QLatin1String("skip")
+                   && schritt(findeSchritt(QStringLiteral("i-02"))).value(QStringLiteral("result")).toString() == QLatin1String("open")
+                   && schritt(findeSchritt(QStringLiteral("i-02"))).value(QStringLiteral("remark")).toString().isEmpty()
+                   && !schritt(findeSchritt(QStringLiteral("i-02"))).contains(QStringLiteral("auto_skip"))
+                   && m_autoSkip->text() == QStringLiteral("↷ Unkritische überspringen (2)"),
+                   QStringLiteral("Übersprungene wieder aufnehmen: nur die automatisch übersprungenen, der von Hand übersprungene bleibt"));
+        }
+
         // Der Leser allein, ohne Verbindung.
         void selbsttestListen(const QDir& d, const Pruefe& pruefe)
         {
@@ -2379,6 +2657,8 @@ namespace
                    QStringLiteral("Zustand: steht beim Verbinden schon etwas, sagt es eine Zeile mit Knopf"));
             pruefe(m_p.testDb.value(QStringLiteral("active")).toBool(),
                    QStringLiteral("Zustand: test_db.active folgt dem gemeldeten Zustand, noch bevor etwas eingerichtet wurde"));
+            pruefe(!QFileInfo::exists(m_logPfad),
+                   QStringLiteral("Zustand: Öffnen und Verbinden allein schreiben kein Testlog"));
             zeige(v0);
             klicke(QStringLiteral("▶ Ausführen"));
             warteBis([&] { return !m_lauf.aktiv; }, 15000);
@@ -2581,6 +2861,10 @@ namespace
         bool      m_endeDurchAktion = false;  // eine Aktion mit beendet_anwendung ist gelaufen: das Ende ist gewollt
         QWidget*  m_endeHinweis = nullptr;
         QLabel*   m_endeText = nullptr;
+        indikator::Gewichtung m_gewichtung;   // Hand- und git-Schicht des Projekts
+        QHash<QString, indikator::Dringlichkeit> m_dringlich;   // je Schritt-Kennung der geöffneten Liste
+        QLabel*   m_warum = nullptr;          // Begründung des Nachtest-Indikators am Schritt
+        QPushButton* m_autoSkip = nullptr;    // »Unkritische überspringen« / »Übersprungene wieder aufnehmen«
         bool      m_nurAnsehen = false;      // ein älterer Lauf aus der Statistik: nichts wird geschrieben
         QWidget*  m_ansehenHinweis = nullptr;
         QLabel*   m_ansehenText = nullptr;

@@ -84,6 +84,7 @@ namespace sichttest
         // Ohne "listen": der Root, Ablage sichttest-logs.
         if (p.listen.isEmpty()) p.listen.append({ p.root, QString(), QString() });
         p.gewichtung = o.value(QStringLiteral("gewichtung")).toObject();
+        p.gewichtungGenannt = o.contains(QStringLiteral("gewichtung"));
         p.abbildung = o.value(QStringLiteral("abbildung")).toObject();
         return p;
     }

@@ -83,7 +83,8 @@
                 { "to": "include", "headers_of": "SichttestSteuerung",
                   "files": [ "sichttest_steuerung.h", "sichttest_steuerung.hpp", "sichttest_steuerung_qt.hpp" ] },
                 { "to": "bin", "binary_of": "SichttestSteuerung" },
-                { "to": "sichttest", "output_dir_of": "Sichttest", "exclude": [ "*.pdb", "*.ilk", "qsqlibase.dll", "qsqlmimer.dll", "qsqloci.dll", "qsqlodbc.dll", "qsqlpsql.dll" ] }
+                { "to": "sichttest", "output_dir_of": "Sichttest", "exclude": [ "*.pdb", "*.ilk", "qsqlibase.dll", "qsqlmimer.dll", "qsqloci.dll", "qsqlodbc.dll", "qsqlpsql.dll" ] },
+                { "to": "werkzeuge", "from": "tools", "files": [ "gewichtung_autoupdate.py", "install_hooks.ps1" ] }
             ],
             "version_file": "packaging/VERSION.in"
         }

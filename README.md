@@ -186,7 +186,7 @@ nicht und meldet es.
 | `start` | womit **▶ Exe starten** die Anwendung startet | die Exe aus der Liste, ohne Argumente |
 | `listen[]` | Ordner mit Listen (oder einzelne Listen), je mit `ablage` und `muster` | der Root des Projekts, Ablage `sichttest-logs/` im Root |
 | `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst | das Feld wird gelesen und als Text gezeigt |
-| `gewichtung` | Dateien des Nachtest-Indikators | wird gelesen, wirkt noch nicht |
+| `gewichtung` | Dateien des Nachtest-Indikators: `{ "hand": [ … ], "git": [ … ] }`; auch leer (`{}`) schaltet es den Indikator ein | kein Indikator |
 
 Das JSON-Format kennt einige Felder, die erst über `abbildung` zu Aktionen werden:
 `setup.close_all_tabs`, `setup.open`, `test_db` und `test_db.ende` (Vorbereitung und
@@ -245,6 +245,42 @@ ein neuer Lauf, und die Kopfzeile sagt es; der abgeschlossene bleibt, wie er ist
 der verbundenen Anwendung; ohne Verbindung die aus der Liste oder dem Projekt.
 Ein fortgesetzter Lauf ohne Verbindung behält, was sein Testlog schon nennt.
 
+## Nachtest-Indikator
+
+Nennt die Projektdatei `gewichtung`, zeigt das Werkzeug an jedem offenen Schritt, wie dringend
+er wieder zu prüfen ist: **🔴** dringend (ab 0,7), **🟡** empfohlen (ab 0,3), ohne Zeichen
+unkritisch. Die Begründung steht am Schritt, die Listenwahl nennt je Liste die Zahl der 🔴 und 🟡.
+
+| Fall | Dringlichkeit |
+|---|---|
+| in `retest_steps` genannt · noch nie Pass oder Fail · letzter Test Fail | 1,0 |
+| letzter Test Pass, eine Area des Schritts wurde danach geändert | ihr `weight`, das höchste gilt |
+| letzter Test Pass, danach ein Commit an den Pfaden einer Area | `auto_weight` (Vorgabe 0,5), hebt nur |
+| letzter Test Pass, nichts geändert | 0 |
+
+Übersprungen zählt nicht als geprüft. Das letzte Ergebnis kommt je Schritt-Kennung aus der
+Ergebnis-DB der Ablage, über alle Listen. Verglichen wird gegen den Build, gegen den der Pass
+fiel.
+
+Die **Hand-Datei** (`hand`) pflegt, wer den Code ändert:
+
+```json
+{ "auto_weight": 0.5,
+  "retest_steps": { "db-03": "Fix aus Lauf vom 10.10. nachtesten" },
+  "areas": { "datenbank": { "weight": 0.8, "changed": "2026-10-10", "note": "Abfrage umgebaut",
+                            "paths": [ "src/db/*.cpp" ] } } }
+```
+
+`changed` ist ein Datum oder ein Zeitstempel (`2026-10-10T14:30:00`). Ein Schritt nennt seine
+Areas im Feld `areas` der Liste (JSON-Format). Die **git-Datei** (`git`) schreibt ein git-Hook:
+je Area der jüngste Commit, der ihre `paths` berührt hat. Der Hook liegt im Paket unter
+`werkzeuge/` (`install_hooks.ps1` im Repo der Anwendung einmal je Klon aufrufen, braucht
+Python); er liest die Pfade aus der Projektdatei — die erste Datei unter `hand` gehört zur
+ersten unter `git`, und so weiter. Die git-Datei ist rechnerlokal und gehört nicht ins Repo.
+
+**↷ Unkritische überspringen** markiert alle offenen Schritte unter 0,3 als übersprungen;
+derselbe Knopf nimmt genau diese wieder auf, von Hand Übersprungene bleiben.
+
 ## Statistik und ältere Läufe
 
 **Statistik…** öffnet ein eigenes Fenster: die Lage in einem Satz, alle Läufe der Liste
@@ -272,9 +308,7 @@ Fail und Pass mit Befund verlangen eine Bemerkung oder einen Screenshot.
 
 ## Was das Werkzeug noch nicht kann
 
-Ein Befund-Archiv je Schritt, einen risikobasierten Nachtest-Indikator (die
-Dateien unter `gewichtung` werden gelesen, wirken aber noch nicht) und
-»Unkritische überspringen«. Geplant ist das in `docs/Konzept_Steuerung.md` §14.1.
+Ein Befund-Archiv je Schritt. Geplant ist das in `docs/Konzept_Steuerung.md` §14.1.
 
 Gebaut und geprüft ist nur Windows; die Steuerung gibt es nur dort.
 

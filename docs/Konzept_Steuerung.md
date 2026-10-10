@@ -589,7 +589,7 @@ relativ zur Datei. (Bis `v0.2.0` lag die Datei lose im Repo, und die Pfade galte
 | `anwendung` | der Name, unter dem sich die Anwendung meldet (`sts_konfig.anwendung`) | der Tester nimmt die einzige verbundene Anwendung |
 | `start` | wie der Tester die Anwendung startet, **wenn sich in seiner Sitzung noch keine gemeldet hat**. Hatte sich eine gemeldet (Absturz, Neustart), startet er die Exe aus deren `hallo` — sonst holte er nach dem Absturz einer Debug-Exe die Release-Exe | er startet sie nicht, der Mensch tut es |
 | `listen[]` | Listenordner (oder einzelne Listen), je mit `ablage` und optional `muster` (Dateimuster, etwa `"Sichttest_Composer_*.md"` — ohne es nimmt das Werkzeug jede `*.md` mit Schritten). Ein genannter Ordner, den es nicht gibt, wird still übergangen (frischer Klon ohne `.claude/`) | der Root des Projekts; Ablage `sichttest-logs/` im Root |
-| `gewichtung { hand[], git[] }` | Dateien des Nachtest-Indikators in **zwei Schichten**, die verschieden gerechnet werden: `hand` trägt je Bereich `weight`, `changed`, `note`, dazu `retest_steps` und `auto_weight`; `git` trägt `changed`, `commit`, `file` und hebt nur auf `auto_weight` (`TestProtokollWindow.cpp:1026–1083`, `:1148–1170`). Innerhalb einer Schicht gilt die Reihenfolge der Liste. Eine genannte Datei, die fehlt, wird still übergangen (`gitGewichtung.json` ist rechnerlokal). Format und Pflege bleiben bei der Anwendung | kein Indikator |
+| `gewichtung { hand[], git[] }` | **schaltet den Nachtest-Indikator ein** (§14.1 Teil C), auch leer. Dateien des Nachtest-Indikators in **zwei Schichten**, die verschieden gerechnet werden: `hand` trägt je Bereich `weight`, `changed`, `note`, dazu `retest_steps` und `auto_weight`; `git` trägt `changed`, `commit`, `file` und hebt nur auf `auto_weight` (`TestProtokollWindow.cpp:1026–1083`, `:1148–1170`). Innerhalb einer Schicht gilt die Reihenfolge der Liste. Eine genannte Datei, die fehlt, wird still übergangen (`gitGewichtung.json` ist rechnerlokal). Format und Pflege bleiben bei der Anwendung | kein Indikator |
 | `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2): der Name der Aktion, danach die Schlüssel, die als Argumente unverändert aus dem Feld mitgehen (ein Array wie `seed` bleibt ein Array; was die Zeile nicht nennt, geht nicht mit). `tab` und `sql` gelten auch für die Links `tab://…` und `sql:…` im Text. **Vorbelegt ist der Schlüssel `fortgesetzt`** (ab `v0.3.5`): er ist kein Feld der Liste, der Tester füllt ihn beim Aufruf mit `true`, wenn der Lauf schon eine Bewertung trägt (§6.4), sonst mit `false`. Ein Stück `wenn=<zustand>` ist kein Schlüssel: es nennt den Zustand der Anwendung, für den die Aktion da ist (§6.2, ab `v0.4.0`) | das Feld wird gelesen und als Text gezeigt |
 
 Für LumiViz genügt:
@@ -861,8 +861,8 @@ Aktionen. Die Ergebnis-DB `testergebnisse.sqlite` ist eine eigene SQLite-Datei
 
 **Stand 2026-10-10:** Stufe 1 seit `v0.2.0`; Stufe 2 seit dem 10.10. im Comm Studio (fünf
 Aktionen, `--testing` gehört dem Werkzeug); Stufe 3 mit `v0.3.5`/`v0.3.6` und im Comm Studio am
-Bildschirm gelaufen. Stufe 4 ist abgestimmt (§14.1); **die Teile A und B sind gebaut**, A auch
-im Comm Studio und dort am Bildschirm gelaufen (S 1.1, P 1.1; §3, §4, §6.2, §6.4); beides
+Bildschirm gelaufen. Stufe 4 ist abgestimmt (§14.1); **die Teile A, B und C sind gebaut**, A
+auch im Comm Studio und dort am Bildschirm gelaufen (S 1.1, P 1.1; §3, §4, §6.2, §6.4); alles
 unveröffentlicht.
 
 ### 14.1 Stufe 4 in vier Teilen (abgestimmt mit CS, Entscheide Patrik 2026-10-10)
@@ -939,8 +939,35 @@ bearbeitbar, weil bis dahin kein Befund-Archiv ein überschriebenes Urteil aufhe
   Schritte unter 0,3 und lässt sich zurücknehmen, ohne von Hand Übersprungene anzufassen.
 - Im Fenster: Dringlichkeit je Liste in der Listenwahl, Begründung am Schritt.
 - Der git-Hook, der die git-Schicht schreibt, zieht aus dem Comm Studio in dieses Projekt, liest
-  die Pfade aus `gewichtung` der Projektdatei und kommt ins Paket. Das Format beider Dateien wird
-  hier beschrieben, sobald Teil C gebaut ist.
+  die Pfade aus `gewichtung` der Projektdatei und kommt ins Paket.
+
+Gebaut (2026-10-10), mit drei Abweichungen vom Quelltext des Comm Studio, die CS gegengelesen hat
+(`CS-20261010-2117-…`): Zeitstempel werden als Zeitpunkte verglichen, nicht als Text (die
+git-Datei trägt eine Zone, der Build-Stempel nicht; ohne Zone gilt Ortszeit); Bezug beider
+Schichten ist der Build am Urteil, sonst der des Laufs, sonst sein Start; die Hand-Schicht
+vergleicht nur bei reinem Datum tageweise.
+
+**Wann es den Indikator gibt:** sobald die Projektdatei `gewichtung` nennt, auch leer — dann wirkt
+nur die Historie (nie verifiziert, letzter Fail). Ohne den Schlüssel, und ohne Projektdatei, gibt
+es keinen.
+
+**Die Hand-Datei** (`gewichtung.hand[]`): `areas { <name>: { weight, changed, note?, auto_weight?,
+paths[]? } }`, `retest_steps { <kennung>: <grund> }`, `auto_weight` an der Wurzel. `changed` ist ein
+Datum oder ein ISO-Zeitstempel; `paths` sind Muster (wie `fnmatch`) für die git-Schicht.
+**Die git-Datei** (`gewichtung.git[]`): `areas { <name>: { changed, commit, file, commits } }`,
+`changed` als ISO-Zeitstempel mit Zone. Sie ist rechnerlokal. Mehrere Dateien je Schicht werden
+verschmolzen: `areas` und `retest_steps` je Schlüssel, alles andere überschrieben.
+
+**Der Hook** `werkzeuge/gewichtung_autoupdate.py` (im Repo `tools/`; post-commit und post-merge,
+eingerichtet von `install_hooks.ps1`, braucht Python) nimmt `hand[i]` als Quelle der Muster und
+schreibt `git[i]`; fehlt `git[i]`, schreibt er für `hand[i]` nichts. Er endet immer mit 0.
+
+**Im Fenster:** 🔴 und 🟡 nur an offenen Schritten; die Begründung in einer Zeile am Schritt; in
+der Listenwahl je Liste die Zahl der 🔴 und 🟡. **↷ Unkritische überspringen** setzt offene
+Schritte unter 0,3 nach einer Rückfrage auf `skip`, mit der Bemerkung „Auto-Skip
+(Nachtest-Indikator …): …" und dem Merkmal `"auto_skip": true`; derselbe Knopf nimmt genau diese
+wieder auf. Wird ein Lauf gegen einen anderen Build fortgesetzt als den, den sein Testlog nennt,
+sagt es die Kopfzeile (Befund CS B7).
 
 **Teil D — Befund-Archiv**
 
