@@ -388,6 +388,8 @@ namespace
             m_titel->setStyleSheet(QStringLiteral("font-weight:bold; font-size:14pt;"));
             col->addWidget(m_titel);
             m_stand = new QLabel(rechts);
+            m_stand->setTextFormat(Qt::RichText);
+            connect(m_stand, &QLabel::linkActivated, this, [this](const QString& ziel) { folgeLink(QUrl(ziel)); });
             col->addWidget(m_stand);
             m_warum = new QLabel(rechts);   // Begründung des Nachtest-Indikators
             m_warum->setWordWrap(true);
@@ -1233,9 +1235,13 @@ namespace
             t += zeichen(r) + QLatin1Char(' ') + namen.value(r, QStringLiteral("offen"));
             const QString wann = s.value(QStringLiteral("rated")).toString();
             if (!wann.isEmpty()) t += QStringLiteral(" (%1)").arg(wann);
-            // Felder des Comm Studio, die zum Handgriff gehören.
+            t = t.toHtmlEscaped();
+            // Felder des Comm Studio, die zum Handgriff gehören. Der Tab ist ein Link: ein Klick
+            // tut dasselbe wie `tab:<Titel>` im Text (Wunsch Patrik 2026-10-10).
             const QString tab = s.value(QStringLiteral("tab")).toString();
-            if (!tab.isEmpty()) t += QStringLiteral(" · Tab: %1").arg(tab);
+            if (!tab.isEmpty())
+                t += QStringLiteral(" · <a href=\"tab:%1\">Tab: %2</a>")
+                         .arg(QString::fromLatin1(QUrl::toPercentEncoding(tab)), tab.toHtmlEscaped());
             if (s.value(QStringLiteral("restart")).toBool()) t += QStringLiteral(" · mit Neustart der Anwendung");
             m_stand->setText(t);
             const QString f = farbe(r);
@@ -2890,6 +2896,12 @@ namespace
             pruefe(log.size() == 2 && text(log, 0).contains(QLatin1String("\"titel\":\"Datenbank\""))
                    && text(log, 1).contains(QLatin1String("SELECT * FROM t")) && m_kopiert == QLatin1String("SELECT * FROM t"),
                    QStringLiteral("Links tab: und sql: im Text lösen die abgebildete Aktion aus; die Abfrage geht in die Zwischenablage"));
+            const bool alsLink = m_stand->text().contains(QStringLiteral("<a href=\"tab:Datenbank\">Tab: Datenbank</a>"));
+            emit m_stand->linkActivated(QStringLiteral("tab:Datenbank"));
+            warteBis([&] { return !m_lauf.aktiv; }, 5000);
+            log = ausgeloest(QStringLiteral("s-01"));
+            pruefe(alsLink && log.size() == 3 && text(log, 2).contains(QLatin1String("\"titel\":\"Datenbank\"")),
+                   QStringLiteral("Feld tab: der Tab in der Kopfzeile des Schritts ist ein Link und löst dieselbe Aktion aus"));
 
             // Schließen nach bloßer Vorbereitung, ohne Bewertung: die Nachbereitung wird angeboten
             // und läuft, bevor das Fenster schließt (Befund CS L1).

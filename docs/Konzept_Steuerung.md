@@ -986,7 +986,7 @@ an einem Schritt, der nicht offen ist. Dazu, über das Comm Studio hinaus (Entsc
 2026-10-10), bei jedem Wechsel eines Urteils in ein anderes: der Eintrag trägt dann Urteil,
 `rated`, `build` und die Bemerkung des alten Stands, auch wenn sie leer ist, und keine Bilder;
 Bemerkung und Bilder bleiben am Schritt, solange der Text gleich bleibt. Das gilt auch beim
-Zurücknehmen auf offen (beim Bauen festgelegt — sonst ginge das Urteil über zwei Klicks doch
+Zurücknehmen auf offen (beim Bauen festgelegt, von Patrik bestätigt — sonst ginge das Urteil über zwei Klicks doch
 verloren). Hat die geänderte Bemerkung den alten Befund schon abgeheftet, entsteht kein zweiter
 Eintrag. Ein Bild allein und dasselbe Urteil noch einmal archivieren nichts. Das nächste Bild
 bekommt eine Nummer über der höchsten, die der Schritt je trug, auch im Archiv. Am Schritt steht

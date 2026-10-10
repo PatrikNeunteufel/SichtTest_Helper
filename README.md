@@ -195,6 +195,33 @@ Nachbereitung der Liste), `tab` und `restart` (am Schritt), dazu die Links `tab:
 Aktion ein Feld auslöst, bestimmt allein die Projektdatei; das Werkzeug kennt keine
 Aktionsnamen irgendeiner Anwendung.
 
+### Links im Text eines Schritts
+
+Der Text eines Schritts ist Markdown, in beiden Listenformaten. Zwei Arten von Links lösen in
+der Anwendung etwas aus; jeder andere Link (`https:` …) öffnet sich wie gewohnt außerhalb.
+
+| So steht es im Text | Ein Klick | Zeile der `abbildung` (Beispiel) |
+|---|---|---|
+| `[Datenbank](tab:Datenbank)` | holt den Tab mit diesem Titel nach vorn | `"tab": "tab_zeigen titel"` |
+| `[Abfrage](sql:SELECT%20*%20FROM%20t)` | legt die Abfrage in die Zwischenablage und reicht sie der Anwendung | `"sql": "sql_einfuegen sql"` |
+
+- **Schreibweise:** ein Leerzeichen im Ziel steht als `%20` (`tab:Firmware%20Update`), sonst
+  endet der Link dort. `tab://Titel` gilt wie `tab:Titel`. Was vor dem Doppelpunkt steht, ist
+  der Schlüssel der `abbildung`; was danach steht, geht als deren erstes Argument mit.
+- **Verbunden:** die Aktion läuft wie über **▶ Herstellen**; die Antwort der Anwendung steht in
+  der Zeile neben den Aktionsknöpfen, und das Testlog führt den Aufruf unter `actions` des
+  gezeigten Schritts.
+- **Nicht verbunden, oder die Projektdatei bildet den Link nicht ab:** dort steht der Handgriff
+  („von Hand: Tab »Datenbank« nach vorn holen"). Die Abfrage eines `sql:`-Links liegt trotzdem
+  in der Zwischenablage.
+- **Die Anwendung antwortet mit einem Fehler** (etwa: kein offener Tab mit diesem Titel): die
+  Zeile nennt Aktion und Fehler in Rot, darunter den Handgriff. Der Lauf hält nicht an.
+- Solange eine Aktion läuft, und in einem Lauf, der nur angesehen wird, bleibt ein Klick ohne
+  Wirkung.
+
+Trägt ein Schritt das Feld `tab`, steht der Tab zusätzlich als Link **Tab: …** in der Zeile
+unter dem Titel; ein Klick tut dasselbe wie der Link im Text.
+
 Eine Zeile der `abbildung` nennt nach dem Namen der Aktion die Schlüssel, die als Argumente
 mitgehen (`"test_db": "testdb_einrichten name seed"`); sie kommen unverändert aus dem Feld der
 Liste. Der Schlüssel **`fortgesetzt`** ist vorbelegt: ihn füllt das Werkzeug beim Aufruf mit
@@ -314,6 +341,7 @@ Die Bilddateien bleiben liegen; ein neues Bild bekommt die nächste freie Nummer
 | Screenshot | Win+Shift+S, dann **📋 Screenshot anhängen**, Strg+Shift+V oder Strg+V im Bemerkungsfeld; Bilddateien ins Fenster ziehen |
 | Screenshot ansehen / löschen | Maus darüber (Vorschau), Doppelklick öffnet, Entf oder Rechtsklick löscht |
 | Befund abheften, Feld leeren | **🗄 Archivieren** |
+| Tab des Schritts nach vorn holen | Klick auf **Tab: …** in der Zeile unter dem Titel (Listen mit dem Feld `tab`) |
 | Fenster über dem Programm halten | Haken **Im Vordergrund** |
 | nur das Unerledigte | Haken **Nur offene und Fail zeigen** |
 | Befunde weitergeben | **Report-Pfad kopieren** und im Chat einfügen |
