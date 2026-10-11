@@ -23,6 +23,11 @@ namespace sichttest::ergebnis
     // Rückgabe leer = gut, sonst der Fehlertext.
     QString spiegele(const QString& logPfad, const QJsonObject& log);
 
+    // Testlogs der Ablage, die die DB noch nicht kennt (von einer älteren Version geschrieben),
+    // nachträglich spiegeln. Die Testlogs selbst bleiben unberührt. Rückgabe: wie viele neu
+    // dazukamen; *uebergangen zählt Dateien, die sich nicht als Testlog lesen ließen.
+    int leseNach(const QString& ablage, int* uebergangen = nullptr, QString* fehler = nullptr);
+
     struct LaufZeile
     {
         QString gestartet, beendet, buildStempel, logDatei;

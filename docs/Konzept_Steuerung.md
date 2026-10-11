@@ -935,6 +935,15 @@ Ansehen**: nichts wird geschrieben, weder Testlog noch DB. Hat er offene Schritt
 **Diesen Lauf fortsetzen** ihn bearbeitbar; abgeschlossene Läufe sind es seit Teil D (siehe
 dort), weil erst das Befund-Archiv einen überschriebenen Befund aufhebt.
 
+**Ältere Testlogs einlesen** (Entscheid Patrik 2026-10-11): Testlogs, die vor der DB oder von
+einer älteren Version geschrieben wurden, fehlen in ihr. Ein Knopf der Statistik spiegelt alle
+`*.testlog.json` der Ablage, deren Name die DB nicht kennt — über alle Listen der Ablage. Das
+geschieht **nur auf den Klick**, nie beim Öffnen einer Liste, und kein Testlog wird dabei
+geändert; eine Datei, die sich nicht als Testlog lesen lässt, wird übergangen und gezählt.
+
+Die **Listenwahl** nennt je Eintrag zuerst den Titel der Liste, dann die Zähler, dann den
+Dateinamen; der Pfad steht im Tooltip (Entscheid Patrik 2026-10-11, Befund L3).
+
 **Teil C — Nachtest-Indikator**
 
 - Dringlichkeit je Schritt, 0 bis 1: Vorbereitung 0 · in `retest_steps` genannt 1,0 · nie

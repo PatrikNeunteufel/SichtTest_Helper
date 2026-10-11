@@ -3,6 +3,7 @@
 #include "Protokoll.hpp"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -228,6 +229,37 @@ namespace sichttest::ergebnis
         }
         db.commit();
         return {};
+    }
+
+    int leseNach(const QString& ablage, int* uebergangen, QString* fehler)
+    {
+        if (uebergangen) *uebergangen = 0;
+        const QDir ordner(ablage);
+        const QStringList logs = ordner.entryList({ QStringLiteral("*.testlog.json") }, QDir::Files, QDir::Name);
+        if (logs.isEmpty()) return 0;
+        QSqlDatabase db = oeffne(ablage, fehler);
+        if (!db.isOpen()) return 0;
+        QSet<QString> bekannt;
+        {
+            QSqlQuery sel(db);
+            if (sel.exec(QStringLiteral("SELECT log_datei FROM testlauf")))
+                while (sel.next()) bekannt.insert(QFileInfo(sel.value(0).toString()).fileName().toLower());
+        }
+        int neu = 0;
+        for (const QString& name : logs)
+        {
+            if (bekannt.contains(name.toLower())) continue;
+            QFile f(ordner.filePath(name));
+            const QJsonObject log = f.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(f.readAll()).object() : QJsonObject();
+            // Ohne steps ist es kein Testlog (oder nicht lesbar): übergangen, nicht geraten.
+            if (!log.value(QStringLiteral("steps")).isArray() || !spiegele(ordner.filePath(name), log).isEmpty())
+            {
+                if (uebergangen) ++*uebergangen;
+                continue;
+            }
+            ++neu;
+        }
+        return neu;
     }
 
     QList<LaufZeile> laeufe(const QString& ablage, const QString& protokoll)

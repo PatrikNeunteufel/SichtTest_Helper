@@ -699,10 +699,16 @@ namespace
             {
                 const Protokoll kurz = lade(p);
                 const Zaehler z = zaehleMitLauf(kurz);
+                // Der Titel vorn — gesucht wird nach dem, was die Liste prüft (Befund L3). Der Pfad
+                // steht im Tooltip des Eintrags.
+                const QString datei = QFileInfo(p).fileName();
                 m_combo->addItem(QStringLiteral("%1   ·   ○ %2  ✗ %3%4   (%5)")
-                                     .arg(pr.gueltig() ? QDir(pr.root).relativeFilePath(p) : QFileInfo(p).fileName())
+                                     .arg(kurz.titel.trimmed().isEmpty() ? datei : kurz.titel.trimmed())
                                      .arg(z.offen).arg(z.fail)
-                                     .arg(markenDerListe(kurz, gewichtung), kurz.titel), p);
+                                     .arg(markenDerListe(kurz, gewichtung), datei), p);
+                m_combo->setItemData(m_combo->count() - 1,
+                                     QDir::toNativeSeparators(pr.gueltig() ? QDir(pr.root).relativeFilePath(p) : p),
+                                     Qt::ToolTipRole);
             }
             if (pfade.isEmpty())
             {
@@ -1034,8 +1040,16 @@ namespace
                 m_statOeffnen = new QPushButton(QStringLiteral("Lauf öffnen"), m_statistik);
                 m_statOeffnen->setToolTip(QStringLiteral("Den gewählten Lauf im Hauptfenster zeigen — nur zum Ansehen."));
                 zeile->addWidget(m_statOeffnen);
+                auto* nachlesen = new QPushButton(QStringLiteral("Ältere Testlogs einlesen"), m_statistik);
+                nachlesen->setToolTip(QStringLiteral("Testlogs dieser Ablage, die die Ergebnis-DB noch nicht kennt, in die DB aufnehmen. "
+                                                     "Die Testlogs selbst bleiben, wie sie sind."));
+                zeile->addWidget(nachlesen);
+                m_statHinweis = new QLabel(m_statistik);
+                m_statHinweis->setStyleSheet(QStringLiteral("color:#8a8a8a;"));
+                zeile->addWidget(m_statHinweis);
                 zeile->addStretch(1);
                 lay->addLayout(zeile);
+                connect(nachlesen, &QPushButton::clicked, this, [this]() { leseAeltereNach(); });
                 m_statSchritte = new QTableWidget(0, 5, m_statistik);
                 m_statSchritte->setHorizontalHeaderLabels({ QStringLiteral("Schritt"), QStringLiteral("Pässe"),
                     QStringLiteral("Fails"), QStringLiteral("zuletzt"), QStringLiteral("wann") });
@@ -1111,6 +1125,30 @@ namespace
                 .arg(verifiziert).arg(titel.size())
                 .arg(QDir::toNativeSeparators(ergebnis::dbPfad(ablage)).toHtmlEscaped())
                 .arg(m_gewichtung.aktiv ? QStringLiteral(" · aktuell %1 offene 🔴-Nachtests").arg(dringend) : QString()));
+        }
+
+        // Knopf der Statistik: Testlogs der Ablage, die die DB nicht kennt, aufnehmen. Geschieht
+        // nur auf diesen Klick — das Öffnen einer Liste ändert an der Ablage nichts.
+        int leseAeltereNach()
+        {
+            if (!m_statistik || m_p.pfad.isEmpty()) return 0;
+            int uebergangen = 0;
+            QString fehler;
+            const int neu = ergebnis::leseNach(logOrdner(m_p.pfad), &uebergangen, &fehler);
+            QString t = !fehler.isEmpty() ? fehler
+                : neu == 0 ? QStringLiteral("Nichts einzulesen — die Ergebnis-DB kennt alle Testlogs der Ablage.")
+                : neu == 1 ? QStringLiteral("1 Testlog eingelesen.")
+                           : QStringLiteral("%1 Testlogs eingelesen.").arg(neu);
+            if (uebergangen > 0) t += QStringLiteral(" %1 nicht lesbar, übergangen.").arg(uebergangen);
+            m_statHinweis->setText(t);
+            if (neu > 0)
+            {
+                rechneIndikator();   // er rechnet mit den neuen Ergebnissen
+                fuelleListe();
+                if (m_idx >= 0) zeige(m_idx);
+                fuelleStatistik();
+            }
+            return neu;
         }
 
         void oeffneGewaehltenLauf()
@@ -2354,6 +2392,27 @@ namespace
             pruefe(m_statLaeufe->rowCount() == 2 && zeile >= 0 && angeboten && !m_nurAnsehen
                    && leseJson(offener).value(QStringLiteral("summary")).toObject().value(QStringLiteral("skip")).toInt() == 1,
                    QStringLiteral("älterer Lauf mit offenen Schritten: »Diesen Lauf fortsetzen« macht ihn bearbeitbar"));
+
+            // 5. Ältere Testlogs einlesen: was in der Ablage liegt und in der DB fehlt, kommt auf
+            // den Knopf hin dazu — nicht von selbst, und ohne das Testlog anzufassen.
+            const QString altlast = QDir(ablage).filePath(QStringLiteral("Altlast_20250101-000000.testlog.json"));
+            schreibeDatei(altlast, QByteArray(R"({ "protocol": "Altlast", "started": "2025-01-01T00:00:00",
+                "summary": { "pass": 1, "fail": 0, "skip": 0, "open": 0 },
+                "steps": [ { "id": "alt-01", "title": "Alt", "result": "pass" } ] })"));
+            schreibeDatei(QDir(ablage).filePath(QStringLiteral("Kaputt_20250101-000000.testlog.json")), "kein json");
+            const QByteArray altVorher = bytes(altlast);
+            zeigeStatistik(false);
+            const bool nichtVonSelbst = ergebnis::laeufe(ablage, QStringLiteral("Altlast")).isEmpty();
+            const int gelesen = leseAeltereNach();
+            const QList<ergebnis::LaufZeile> alte = ergebnis::laeufe(ablage, QStringLiteral("Altlast"));
+            pruefe(nichtVonSelbst && gelesen == 1 && alte.size() == 1 && alte.first().pass == 1
+                   && ergebnis::letzteErgebnisse(ablage).value(QStringLiteral("alt-01")).ergebnis == QLatin1String("pass")
+                   && m_statHinweis->text().contains(QStringLiteral("1 Testlog eingelesen"))
+                   && m_statHinweis->text().contains(QStringLiteral("1 nicht lesbar")) && bytes(altlast) == altVorher,
+                   QStringLiteral("Ältere Testlogs einlesen: nur auf den Knopf, das Testlog bleibt Byte für Byte, Unlesbares wird übergangen (gelesen %1)").arg(gelesen));
+            pruefe(leseAeltereNach() == 0 && m_statHinweis->text().contains(QStringLiteral("Nichts einzulesen"))
+                   && ergebnis::laeufe(ablage, QStringLiteral("Altlast")).size() == 1,
+                   QStringLiteral("Ältere Testlogs einlesen: ein zweiter Klick liest nichts doppelt"));
         }
 
         // Befund-Archiv und das Bearbeiten eines abgeschlossenen Laufs (§14.1 Teil D).
@@ -2840,6 +2899,14 @@ namespace
             pruefe(m_combo->count() == 2 && m_combo->findData(studio) >= 0 && m_combo->findData(composer) >= 0,
                    QStringLiteral("Listen aus zwei Ordnern; das Muster gilt, ein fehlender Ordner wird übergangen (gezählt %1)")
                        .arg(m_combo->count()));
+            {
+                const int i = m_combo->findData(studio);
+                const QString eintrag = m_combo->itemText(i);
+                const QString tipp = m_combo->itemData(i, Qt::ToolTipRole).toString();
+                pruefe(eintrag.startsWith(QStringLiteral("Studio   ·")) && eintrag.endsWith(QStringLiteral("(studio.testprotokoll.json)"))
+                       && !eintrag.contains(QStringLiteral("listen")) && QDir::fromNativeSeparators(tipp) == QLatin1String("listen/studio.testprotokoll.json"),
+                       QStringLiteral("Listenwahl: der Titel steht vorn, der Dateiname hinten, der Pfad im Tooltip (»%1«)").arg(eintrag));
+            }
             pruefe(QFileInfo(logOrdner(studio)) == QFileInfo(wurzel.filePath(QStringLiteral("ablage/studio")))
                    && QFileInfo(logOrdner(composer)) == QFileInfo(wurzel.filePath(QStringLiteral("md/sichttest-logs"))),
                    QStringLiteral("Ablage je Listenordner; ohne Angabe sichttest-logs neben der Liste"));
@@ -2987,6 +3054,29 @@ namespace
             pruefe(m_endeHinweis->isHidden(),
                    QStringLiteral("Beenden: nach einer Aktion mit beendet_anwendung bietet der Tester das Beenden nicht an"));
 
+            // Ein begonnener Lauf wird wieder geöffnet, dann verbindet sich die Anwendung und meldet
+            // ihren Zustand: beides lässt das Testlog auf der Platte Byte für Byte, wie es ist.
+            {
+                auto bytes = [](const QString& pfad) {
+                    QFile f(pfad);
+                    return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+                };
+                const QString logVorher = m_logPfad;
+                const QByteArray vorher = bytes(logVorher);
+                setzeOrdner(wurzel.filePath(QStringLiteral("listen")), studio);
+                const bool fortgesetzt = m_logPfad == logVorher && hatBewertung() && !vorher.isEmpty();
+                const bool nachOeffnen = bytes(logVorher) == vorher;
+                QProcess wieder;
+                starteGegenprobe(wieder, QStringLiteral("anwendung"), m_selbsttestKanal);
+                const bool verbunden = warteBis([&] { return m_steuerung.anwendung(g) != nullptr; }, 10000)
+                                       && warteBis([&] { return stand(QStringLiteral("probe")) == 1; }, 3000);
+                pruefe(fortgesetzt && nachOeffnen && verbunden && bytes(logVorher) == vorher,
+                       QStringLiteral("Zustand: Öffnen und Verbinden schreiben auch ein fortgesetztes Testlog nicht neu"));
+                wieder.kill();
+                wieder.waitForFinished(2000);
+                warteBis([&] { return m_steuerung.anwendung(g) == nullptr; }, 5000);
+            }
+
             // Meldet sich eine Anwendung mit einer Projektdatei im hallo, öffnet der Tester deren Listen.
             const QDir zwei(d.filePath(QStringLiteral("projekt2")));
             QDir(zwei.absolutePath()).removeRecursively();
@@ -3117,6 +3207,7 @@ namespace
         QDialog*  m_statistik = nullptr;     // eigenes Fenster, erst beim ersten Öffnen gebaut
         QLabel*   m_statLage = nullptr;
         QTableWidget* m_statLaeufe = nullptr;
+        QLabel*   m_statHinweis = nullptr;    // was »Ältere Testlogs einlesen« getan hat
         QTableWidget* m_statSchritte = nullptr;
         QPushButton* m_statOeffnen = nullptr;
         bool      m_statistikImTest = false;  // Selbsttest: füllen, ohne das Fenster zu zeigen

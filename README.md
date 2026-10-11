@@ -288,6 +288,8 @@ Ein fortgesetzter Lauf ohne Verbindung behält, was sein Testlog schon nennt.
 Nennt die Projektdatei `gewichtung`, zeigt das Werkzeug an jedem offenen Schritt, wie dringend
 er wieder zu prüfen ist: **🔴** dringend (ab 0,7), **🟡** empfohlen (ab 0,3), ohne Zeichen
 unkritisch. Die Begründung steht am Schritt, die Listenwahl nennt je Liste die Zahl der 🔴 und 🟡.
+Ein Eintrag der Listenwahl beginnt mit dem Titel der Liste, dann die Zähler, dann der Dateiname;
+der Pfad steht im Tooltip.
 
 | Fall | Dringlichkeit |
 |---|---|
@@ -324,6 +326,12 @@ derselbe Knopf nimmt genau diese wieder auf, von Hand Übersprungene bleiben.
 **Statistik…** öffnet ein eigenes Fenster: die Lage in einem Satz, alle Läufe der Liste
 (Start, Build, Zähler, Testlog) und ihre Schritte mit Pässen, Fails und dem letzten Ergebnis —
 die Problemschritte zuerst. Es bleibt offen und frischt sich bei jedem Schreiben auf.
+
+Die Statistik liest aus der Ergebnis-DB der Ablage (`testergebnisse.sqlite`), und die füllt sich
+mit jedem Schreiben eines Testlogs. Testlogs, die eine ältere Version geschrieben hat, kennt sie
+nicht. **Ältere Testlogs einlesen** nimmt alle Testlogs der Ablage auf, die in der DB fehlen —
+für alle Listen der Ablage, nur auf diesen Klick, und ohne ein Testlog zu ändern. Danach rechnet
+auch der Nachtest-Indikator mit ihnen.
 
 **Lauf öffnen** (oder ein Doppelklick) zeigt einen älteren Lauf im Hauptfenster, **nur zum
 Ansehen**: Urteile, Bemerkungen und Bilder sind da, geschrieben wird nichts. **Diesen Lauf
