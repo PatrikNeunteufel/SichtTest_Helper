@@ -398,7 +398,7 @@ namespace
             col->addWidget(m_warum);
 
             m_text = new QTextBrowser(rechts);
-            // Links `tab:<Titel>` und `sql:<Abfrage>` der Listen des Comm Studio lösen Aktionen aus.
+            // Links `<schlüssel>:<wert>` lösen die Aktion aus, die die `abbildung` dem Schlüssel gibt.
             m_text->setOpenLinks(false);
             connect(m_text, &QTextBrowser::anchorClicked, this, [this](const QUrl& url) { folgeLink(url); });
             col->addWidget(m_text, 2);
@@ -1893,11 +1893,19 @@ namespace
             }
         }
 
-        // Links der Listen des Comm Studio: `tab:<Titel>` und `sql:<Abfrage>` (ohne //).
+        // Ein Link löst eine Aktion aus, wenn sein Schema ein Schlüssel der `abbildung` ist (§6.2).
+        // `tab` und `sql` zählen auch ohne Zeile dazu: dann steht der Handgriff da.
+        bool linkIstAktion(const QString& art) const
+        {
+            return art == QLatin1String("tab") || art == QLatin1String("sql")
+                   || !projekt().abbildung.value(art).toString().trimmed().isEmpty();
+        }
+
+        // Links im Text: `<schlüssel>:<wert>`, der Wert geht als erstes Argument der Aktion mit.
         void folgeLink(const QUrl& url)
         {
             const QString art = url.scheme();
-            if (art != QLatin1String("tab") && art != QLatin1String("sql"))
+            if (art.isEmpty() || !linkIstAktion(art))
             {
                 QDesktopServices::openUrl(url);
                 return;
@@ -1915,7 +1923,9 @@ namespace
             }
             const QString hand = art == QLatin1String("tab")
                 ? QStringLiteral("Tab »%1« nach vorn holen").arg(wert)
-                : QStringLiteral("Die Abfrage liegt in der Zwischenablage — im SQL-Terminal einfügen");
+                : art == QLatin1String("sql")
+                    ? QStringLiteral("Die Abfrage liegt in der Zwischenablage — im SQL-Terminal einfügen")
+                    : QStringLiteral("%1 »%2«").arg(art, wert);
             QString aktion;
             QStringList schluessel;
             if (m_lauf.aktiv) return;
@@ -2783,6 +2793,7 @@ namespace
                       { QStringLiteral("tab"), QStringLiteral("echo titel") },
                       { QStringLiteral("restart"), QStringLiteral("ende") },
                       { QStringLiteral("sql"), QStringLiteral("echo sql") },
+                      { QStringLiteral("datei"), QStringLiteral("echo pfad") },
                       { QStringLiteral("test_db"), QStringLiteral("stellt_her name seed fortgesetzt") },
                       { QStringLiteral("test_db.ende"), QStringLiteral("raeumt wenn=probe") } } } };
             const QString projektDatei = wurzel.filePath(QStringLiteral(".sichttest/sichttest.projekt.json"));
@@ -2796,7 +2807,7 @@ namespace
                 "steps": [
                   { "id": "s-00", "kind": "prep", "section": "A", "title": "Vorbereiten", "text": "Tab öffnen.", "areas": ["db"] },
                   { "id": "s-01", "section": "A", "title": "Eins", "tab": "Datenbank", "areas": ["db", "csv"],
-                    "text": "Siehe [Tab](tab:Datenbank) und [Abfrage](sql:SELECT%20*%20FROM%20t)." },
+                    "text": "Siehe [Tab](tab:Datenbank), [Abfrage](sql:SELECT%20*%20FROM%20t) und [Vorlage](datei:configs/a%20b.json)." },
                   { "id": "s-02", "section": "A", "title": "Zwei", "restart": true, "areas": [], "text": "Neustart." } ] })"));
             geschrieben = geschrieben && schreibeDatei(composer, "# Composer\n\n- [ ] **C1 Eins:** Text.\n");
             geschrieben = geschrieben && schreibeDatei(wurzel.filePath(QStringLiteral("md/Notiz.md")),
@@ -2902,6 +2913,18 @@ namespace
             log = ausgeloest(QStringLiteral("s-01"));
             pruefe(alsLink && log.size() == 3 && text(log, 2).contains(QLatin1String("\"titel\":\"Datenbank\"")),
                    QStringLiteral("Feld tab: der Tab in der Kopfzeile des Schritts ist ein Link und löst dieselbe Aktion aus"));
+            // Jeder Schlüssel der abbildung ist ein Link (Entscheid Patrik 2026-10-11).
+            const bool imText = m_text->toHtml().contains(QLatin1String("href=\"datei:configs/a%20b.json\""));
+            const QString kopiertVorher = m_kopiert;
+            folgeLink(QUrl(QStringLiteral("datei:configs/a%20b.json")));
+            warteBis([&] { return !m_lauf.aktiv; }, 5000);
+            log = ausgeloest(QStringLiteral("s-01"));
+            pruefe(imText && log.size() == 4 && text(log, 3).contains(QLatin1String("\"pfad\":\"configs/a b.json\""))
+                   && m_kopiert == kopiertVorher,
+                   QStringLiteral("Links allgemein: ein weiterer Schlüssel der abbildung (datei:) löst seine Aktion aus, der Wert als erstes Argument"));
+            pruefe(linkIstAktion(QStringLiteral("datei")) && linkIstAktion(QStringLiteral("setup.open"))
+                   && !linkIstAktion(QStringLiteral("https")) && !linkIstAktion(QStringLiteral("mailto")),
+                   QStringLiteral("Links allgemein: ein Schema ohne Zeile der abbildung ist kein Aktions-Link und öffnet sich außerhalb"));
 
             // Schließen nach bloßer Vorbereitung, ohne Bewertung: die Nachbereitung wird angeboten
             // und läuft, bevor das Fenster schließt (Befund CS L1).

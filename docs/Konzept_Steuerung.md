@@ -452,6 +452,16 @@ die zwölf vorhandenen Protokolle (11 in `UART/assets/testing/protocols/`, eines
 Die sieben Namen hat CS übernommen (Nachricht vom 08.10.2026, 22:05); sie gehören dem Comm
 Studio. Einrichten und Abbauen der Test-DB samt aller Rückfragen bleiben im Studio.
 
+**Links allgemein** (Entscheid Patrik 2026-10-11, ab `v0.4.0`): `tab` und `sql` sind kein
+Sonderfall. **Jeder Schlüssel der `abbildung` ist zugleich ein Link** im Text eines Schritts —
+`[Text](<schlüssel>:<wert>)` löst die dort genannte Aktion aus, der Wert geht als ihr erstes
+Argument mit (etwa `"datei": "datei_oeffnen pfad"` und `[Vorlage](datei:configs/a.json)`). Ein
+Schema, das die `abbildung` nicht nennt, öffnet sich außerhalb. Nur zweierlei bleibt an den
+Namen `tab` und `sql` hängen: `sql` füllt zusätzlich die Zwischenablage, und beide zeigen ohne
+Zeile der `abbildung` den Handgriff, statt sich außerhalb zu öffnen. Als Link taugt nur ein
+Schlüssel, der ein gültiges URL-Schema ist (Kleinbuchstaben, Ziffern, `.`, `+`, `-`; also nicht
+`test_db`).
+
 **Testlog:** Das Werkzeug liest und schreibt zusätzlich, was das Studio heute schreibt, damit
 alte Läufe lesbar bleiben: `history[]` je Schritt (`:1900–1908`), `setup` und `test_db` samt
 `test_db.active` an der Wurzel, `pass_remark` in der Zusammenfassung.
@@ -590,7 +600,7 @@ relativ zur Datei. (Bis `v0.2.0` lag die Datei lose im Repo, und die Pfade galte
 | `start` | wie der Tester die Anwendung startet, **wenn sich in seiner Sitzung noch keine gemeldet hat**. Hatte sich eine gemeldet (Absturz, Neustart), startet er die Exe aus deren `hallo` — sonst holte er nach dem Absturz einer Debug-Exe die Release-Exe | er startet sie nicht, der Mensch tut es |
 | `listen[]` | Listenordner (oder einzelne Listen), je mit `ablage` und optional `muster` (Dateimuster, etwa `"Sichttest_Composer_*.md"` — ohne es nimmt das Werkzeug jede `*.md` mit Schritten). Ein genannter Ordner, den es nicht gibt, wird still übergangen (frischer Klon ohne `.claude/`) | der Root des Projekts; Ablage `sichttest-logs/` im Root |
 | `gewichtung { hand[], git[] }` | **schaltet den Nachtest-Indikator ein** (§14.1 Teil C), auch leer. Dateien des Nachtest-Indikators in **zwei Schichten**, die verschieden gerechnet werden: `hand` trägt je Bereich `weight`, `changed`, `note`, dazu `retest_steps` und `auto_weight`; `git` trägt `changed`, `commit`, `file` und hebt nur auf `auto_weight` (`TestProtokollWindow.cpp:1026–1083`, `:1148–1170`). Innerhalb einer Schicht gilt die Reihenfolge der Liste. Eine genannte Datei, die fehlt, wird still übergangen (`gitGewichtung.json` ist rechnerlokal). Format und Pflege bleiben bei der Anwendung | kein Indikator |
-| `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2): der Name der Aktion, danach die Schlüssel, die als Argumente unverändert aus dem Feld mitgehen (ein Array wie `seed` bleibt ein Array; was die Zeile nicht nennt, geht nicht mit). `tab` und `sql` gelten auch für die Links `tab://…` und `sql:…` im Text. **Vorbelegt ist der Schlüssel `fortgesetzt`** (ab `v0.3.5`): er ist kein Feld der Liste, der Tester füllt ihn beim Aufruf mit `true`, wenn der Lauf schon eine Bewertung trägt (§6.4), sonst mit `false`. Ein Stück `wenn=<zustand>` ist kein Schlüssel: es nennt den Zustand der Anwendung, für den die Aktion da ist (§6.2, ab `v0.4.0`) | das Feld wird gelesen und als Text gezeigt |
+| `abbildung` | welche Aktion ein Feld des JSON-Formats auslöst (§6.2): der Name der Aktion, danach die Schlüssel, die als Argumente unverändert aus dem Feld mitgehen (ein Array wie `seed` bleibt ein Array; was die Zeile nicht nennt, geht nicht mit). Jeder Schlüssel ist zugleich ein Link im Text (`tab://…`, `sql:…`, `datei:…`; §6.2, „Links allgemein"). **Vorbelegt ist der Schlüssel `fortgesetzt`** (ab `v0.3.5`): er ist kein Feld der Liste, der Tester füllt ihn beim Aufruf mit `true`, wenn der Lauf schon eine Bewertung trägt (§6.4), sonst mit `false`. Ein Stück `wenn=<zustand>` ist kein Schlüssel: es nennt den Zustand der Anwendung, für den die Aktion da ist (§6.2, ab `v0.4.0`) | das Feld wird gelesen und als Text gezeigt |
 
 Für LumiViz genügt:
 

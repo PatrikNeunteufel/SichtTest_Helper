@@ -190,30 +190,41 @@ nicht und meldet es.
 
 Das JSON-Format kennt einige Felder, die erst über `abbildung` zu Aktionen werden:
 `setup.close_all_tabs`, `setup.open`, `test_db` und `test_db.ende` (Vorbereitung und
-Nachbereitung der Liste), `tab` und `restart` (am Schritt), dazu die Links `tab:<Titel>` und
-`sql:<Abfrage>` im Text. Eine Abfrage legt das Werkzeug selbst in die Zwischenablage. Welche
+Nachbereitung der Liste), `tab` und `restart` (am Schritt). Jeder Schlüssel der `abbildung` ist
+zugleich ein Link im Text (`tab:<Titel>`, `sql:<Abfrage>`, `datei:<Pfad>` …, siehe unten). Welche
 Aktion ein Feld auslöst, bestimmt allein die Projektdatei; das Werkzeug kennt keine
 Aktionsnamen irgendeiner Anwendung.
 
 ### Links im Text eines Schritts
 
-Der Text eines Schritts ist Markdown, in beiden Listenformaten. Zwei Arten von Links lösen in
-der Anwendung etwas aus; jeder andere Link (`https:` …) öffnet sich wie gewohnt außerhalb.
+Der Text eines Schritts ist Markdown, in beiden Listenformaten. **Jeder Schlüssel der
+`abbildung` ist zugleich ein Link:** `[Text](<schlüssel>:<wert>)` löst die Aktion aus, die die
+Projektdatei dem Schlüssel gibt, und der Wert geht als ihr erstes Argument mit. Ein Schema, das
+die `abbildung` nicht nennt (`https:` …), öffnet sich wie gewohnt außerhalb.
 
 | So steht es im Text | Ein Klick | Zeile der `abbildung` (Beispiel) |
 |---|---|---|
 | `[Datenbank](tab:Datenbank)` | holt den Tab mit diesem Titel nach vorn | `"tab": "tab_zeigen titel"` |
 | `[Abfrage](sql:SELECT%20*%20FROM%20t)` | legt die Abfrage in die Zwischenablage und reicht sie der Anwendung | `"sql": "sql_einfuegen sql"` |
+| `[Vorlage](datei:configs/examples/a.json)` | öffnet die Datei in der Anwendung | `"datei": "datei_oeffnen pfad"` |
+
+Die ersten beiden kennt das Werkzeug mit Namen, die dritte Zeile ist ein Beispiel: den
+Schlüssel wählt die Projektdatei frei.
 
 - **Schreibweise:** ein Leerzeichen im Ziel steht als `%20` (`tab:Firmware%20Update`), sonst
-  endet der Link dort. `tab://Titel` gilt wie `tab:Titel`. Was vor dem Doppelpunkt steht, ist
-  der Schlüssel der `abbildung`; was danach steht, geht als deren erstes Argument mit.
+  endet der Link dort. `tab://Titel` gilt wie `tab:Titel`. Als Link taugt ein Schlüssel, der
+  mit einem Buchstaben beginnt und nur Kleinbuchstaben, Ziffern, `.`, `+` und `-` trägt
+  (`setup.open:` geht, `test_db:` wegen des Unterstrichs nicht).
+- **Argument:** der Wert geht unter dem ersten Schlüssel mit, den die Zeile der `abbildung`
+  nach der Aktion nennt (`pfad` bei `"datei": "datei_oeffnen pfad"`); nennt sie keinen, heißt
+  er `wert`.
 - **Verbunden:** die Aktion läuft wie über **▶ Herstellen**; die Antwort der Anwendung steht in
   der Zeile neben den Aktionsknöpfen, und das Testlog führt den Aufruf unter `actions` des
   gezeigten Schritts.
-- **Nicht verbunden, oder die Projektdatei bildet den Link nicht ab:** dort steht der Handgriff
-  („von Hand: Tab »Datenbank« nach vorn holen"). Die Abfrage eines `sql:`-Links liegt trotzdem
-  in der Zwischenablage.
+- **Nicht verbunden:** dort steht der Handgriff („von Hand: Tab »Datenbank« nach vorn holen",
+  bei einem eigenen Schlüssel „von Hand: datei »configs/examples/a.json«"). `tab:` und `sql:`
+  zeigen ihn auch dann, wenn die Projektdatei sie nicht abbildet. Die Abfrage eines
+  `sql:`-Links liegt in jedem Fall in der Zwischenablage.
 - **Die Anwendung antwortet mit einem Fehler** (etwa: kein offener Tab mit diesem Titel): die
   Zeile nennt Aktion und Fehler in Rot, darunter den Handgriff. Der Lauf hält nicht an.
 - Solange eine Aktion läuft, und in einem Lauf, der nur angesehen wird, bleibt ein Klick ohne
