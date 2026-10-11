@@ -5,7 +5,7 @@
 //
 // Das Schema ist das des Comm Studio (testlauf, testschritt, protokoll). Zwei
 // Dinge sind anders: `log_datei` trägt den Dateinamen ohne Ordner, und
-// `testschritt` hat zwei ergänzte Spalten für den Build am Urteil.
+// `testschritt` hat ergänzte Spalten für den Build am Urteil und seinen Zeitpunkt.
 
 #pragma once
 
@@ -50,8 +50,12 @@ namespace sichttest::ergebnis
         QString ergebnis;       // pass, pass_remark oder fail — skip ist nicht verifiziert
         QString gestartet;      // Start des Laufs, der es geliefert hat
         QString buildStempel;   // Build am Urteil, sonst der des Laufs
+        QString bewertet;       // Zeitpunkt des Urteils (rated_at); leer bei Urteilen ohne ihn
+        // Wann getestet wurde: der Zeitpunkt des Urteils, sonst der Start des Laufs.
+        const QString& wann() const { return bewertet.isEmpty() ? gestartet : bewertet; }
     };
-    // Das letzte verifizierte Ergebnis je Schritt-Kennung, über alle Listen der Ablage.
+    // Das letzte verifizierte Ergebnis je Schritt-Kennung, über alle Listen der Ablage —
+    // das jüngste nach dem Zeitpunkt des Urteils, nicht nach dem Start seines Laufs.
     QHash<QString, LetztesErgebnis> letzteErgebnisse(const QString& ablage);
 
     // Die Verbindung schließen (Selbsttest: die Datei wird sonst festgehalten).

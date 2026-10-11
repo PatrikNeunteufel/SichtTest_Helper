@@ -966,6 +966,18 @@ git-Datei trägt eine Zone, der Build-Stempel nicht; ohne Zone gilt Ortszeit); B
 Schichten ist der Build am Urteil, sonst der des Laufs, sonst sein Start; die Hand-Schicht
 vergleicht nur bei reinem Datum tageweise.
 
+**Zeitpunkt des Urteils** (Befund CS `CS-20261011-1632-…`, Entscheid Patrik 2026-10-11, ab
+`v0.4.0`): Der Tagesvergleich der Hand-Schicht hielt `changed` gegen den **Start des Laufs** —
+wer heute in einem fortgesetzten Lauf vom September einen Schritt bewertete, hatte ihn danach
+„im September getestet", und der Schritt blieb 🔴. Das Urteil trägt deshalb im Testlog neben
+`rated` (Tag und Uhrzeit ohne Jahr, zum Lesen) das Feld **`rated_at`** (ISO, Ortszeit), die DB
+die ergänzte Spalte `testschritt.rated_at`. Der Tagesvergleich und der Text der Begründung
+nehmen den Tag des Urteils; „das letzte Ergebnis" eines Schritts ist das mit dem jüngsten
+Urteil, nicht das aus dem zuletzt begonnenen Lauf. Ein Urteil ohne `rated_at` (älteres Testlog,
+oder eine Zeile, die der Tester des Comm Studio neu geschrieben hat) gilt wie bisher am Start
+seines Laufs. Beim Zurücknehmen auf offen geht `rated_at` mit `rated`; ein Eintrag des
+Befund-Archivs trägt es.
+
 **Wann es den Indikator gibt:** sobald die Projektdatei `gewichtung` nennt, auch leer — dann wirkt
 nur die Historie (nie verifiziert, letzter Fail). Ohne den Schlüssel, und ohne Projektdatei, gibt
 es keinen.

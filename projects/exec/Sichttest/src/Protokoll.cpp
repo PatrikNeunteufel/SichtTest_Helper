@@ -506,7 +506,7 @@ namespace sichttest
             const auto it = alt.constFind(s.value(QStringLiteral("id")).toString());
             if (it == alt.constEnd()) continue;
             // history: das Befund-Archiv des Comm Studio — wird mitgeführt, damit alte Läufe ganz bleiben.
-            for (const char* feld : { "result", "remark", "screenshots", "rated", "actions", "history", "build" })
+            for (const char* feld : { "result", "remark", "screenshots", "rated", "rated_at", "actions", "history", "build" })
                 if (it->contains(QLatin1String(feld)))
                     s.insert(QLatin1String(feld), it->value(QLatin1String(feld)));
             if (istVorbereitung(s)) s.insert(QStringLiteral("result"), QStringLiteral("prep"));
@@ -579,7 +579,7 @@ namespace sichttest
                 { QStringLiteral("remark"), von.value(QStringLiteral("remark")).toString() },
                 { QStringLiteral("screenshots"), bilder } };
             // Über das Format des Comm Studio hinaus: wann und gegen welchen Build geurteilt wurde.
-            for (const char* feld : { "rated", "build" })
+            for (const char* feld : { "rated", "rated_at", "build" })
                 if (von.contains(QLatin1String(feld)))
                     eintrag.insert(QLatin1String(feld), von.value(QLatin1String(feld)));
             QJsonArray archiv = schritt.value(QStringLiteral("history")).toArray();

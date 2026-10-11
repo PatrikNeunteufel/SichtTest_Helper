@@ -957,6 +957,7 @@ namespace
                 s.insert(QStringLiteral("remark"), QString());
                 s.remove(QStringLiteral("auto_skip"));
                 s.remove(QStringLiteral("rated"));
+                s.remove(QStringLiteral("rated_at"));
                 m_p.schritte.replace(n, s);
                 zurueck = true;
             }
@@ -981,6 +982,7 @@ namespace
                     s.insert(QStringLiteral("remark"), QStringLiteral("Auto-Skip (Nachtest-Indikator %1): %2").arg(d.u, 0, 'f', 1).arg(d.warum));
                     s.insert(QStringLiteral("auto_skip"), true);
                     s.insert(QStringLiteral("rated"), QDateTime::currentDateTime().toString(QStringLiteral("dd.MM. HH:mm")));
+                    s.insert(QStringLiteral("rated_at"), QDateTime::currentDateTime().toString(Qt::ISODate));
                     m_p.schritte.replace(n, s);
                 }
             }
@@ -1116,7 +1118,7 @@ namespace
                 const auto it = letzte.constFind(s.id);
                 const QStringList zellen{ QStringLiteral("%1  %2").arg(s.id, titel.value(s.id)), QString::number(s.paesse),
                     QString::number(s.fails), it == letzte.constEnd() ? QStringLiteral("—") : zeichen(it->ergebnis),
-                    it == letzte.constEnd() ? QString() : it->gestartet.left(10) };
+                    it == letzte.constEnd() ? QString() : it->wann().left(10) };
                 for (int c = 0; c < zellen.size(); ++c) m_statSchritte->setItem(r, c, new QTableWidgetItem(zellen.at(c)));
             }
             m_statSchritte->resizeColumnsToContents();
@@ -1406,12 +1408,16 @@ namespace
             if (ergebnis == QLatin1String("open"))
             {
                 s.remove(QStringLiteral("rated"));
+                s.remove(QStringLiteral("rated_at"));
                 s.remove(QStringLiteral("build"));
             }
             else
             {
                 s.insert(QStringLiteral("rated"),
                          QDateTime::currentDateTime().toString(QStringLiteral("dd.MM. HH:mm")));
+                // Der Zeitpunkt des Urteils mit Jahr: gegen ihn rechnet der Nachtest-Indikator, nicht
+                // gegen den Start des Laufs — ein fortgesetzter Lauf kann Wochen alt sein.
+                s.insert(QStringLiteral("rated_at"), QDateTime::currentDateTime().toString(Qt::ISODate));
                 // Der Build hängt am Urteil (§14.1); an der Wurzel steht der zuletzt benutzte.
                 m_p.build = aktuellerBuild();
                 s.insert(QStringLiteral("build"), m_p.build);
@@ -2363,6 +2369,31 @@ namespace
                    && letzte.value(QStringLiteral("a-02")).buildStempel == QLatin1String("2026-10-09T09:09:09"),
                    QStringLiteral("Ergebnis-DB: Spiegeln findet den Lauf über den Namen (ohne Groß/Klein), Vorbereitungen nicht, Build am Urteil gilt (»%1«)").arg(fehler));
 
+            // 3b. Das letzte Ergebnis ist das jüngste Urteil: ein Fail von heute in einem alten,
+            // fortgesetzten Lauf geht einem Pass aus einem später begonnenen Lauf vor.
+            {
+                auto lauf = [](const char* gestartet, const char* ergebnis, const char* bewertet) {
+                    QJsonObject s{ { QStringLiteral("id"), QStringLiteral("z-01") }, { QStringLiteral("result"), QLatin1String(ergebnis) } };
+                    if (*bewertet) s.insert(QStringLiteral("rated_at"), QLatin1String(bewertet));
+                    return QJsonObject{ { QStringLiteral("protocol"), QStringLiteral("Zeit") }, { QStringLiteral("started"), QLatin1String(gestartet) },
+                                        { QStringLiteral("steps"), QJsonArray{ s } } };
+                };
+                const QString f1 = ergebnis::spiegele(QDir(alt).filePath(QStringLiteral("Zeit_20260901-100000.testlog.json")),
+                                                      lauf("2026-09-01T10:00:00", "fail", "2026-10-11T12:00:00"));
+                const QString f2 = ergebnis::spiegele(QDir(alt).filePath(QStringLiteral("Zeit_20261001-100000.testlog.json")),
+                                                      lauf("2026-10-01T10:00:00", "pass", "2026-10-02T08:00:00"));
+                const ergebnis::LetztesErgebnis z1 = ergebnis::letzteErgebnisse(alt).value(QStringLiteral("z-01"));
+                // Ohne Urteilszeit im jüngeren Lauf zählt dessen Start — der liegt vor dem Fail von heute.
+                const QString f3 = ergebnis::spiegele(QDir(alt).filePath(QStringLiteral("Zeit_20261001-100000.testlog.json")),
+                                                      lauf("2026-10-01T10:00:00", "pass", ""));
+                const ergebnis::LetztesErgebnis z2 = ergebnis::letzteErgebnisse(alt).value(QStringLiteral("z-01"));
+                pruefe(f1.isEmpty() && f2.isEmpty() && f3.isEmpty()
+                       && z1.ergebnis == QLatin1String("fail") && z1.bewertet == QLatin1String("2026-10-11T12:00:00")
+                       && z1.gestartet == QLatin1String("2026-09-01T10:00:00") && z1.wann().startsWith(QLatin1String("2026-10-11"))
+                       && z2.ergebnis == QLatin1String("fail"),
+                       QStringLiteral("Ergebnis-DB: das letzte Ergebnis ist das jüngste Urteil (rated_at), nicht das aus dem zuletzt begonnenen Lauf (»%1«)").arg(f1 + f2 + f3));
+            }
+
             // 4. Statistik und Ansehen: der abgeschlossene Lauf der ersten Liste.
             setzeOrdner(d.absolutePath(), liste);
             m_statistikImTest = true;
@@ -2580,7 +2611,10 @@ namespace
                 { QStringLiteral("s-fail"), { QStringLiteral("fail"), QStringLiteral("2026-09-01T10:00:00"), QStringLiteral("2026-09-01T14:00:00") } },
                 { QStringLiteral("s-nach"), { QStringLiteral("pass"), QStringLiteral("2026-09-01T10:00:00"), QStringLiteral("2026-09-01T14:00:00") } },
                 { QStringLiteral("s-pass"), { QStringLiteral("pass"), QStringLiteral("2026-09-01T10:00:00"), QStringLiteral("2026-09-01T14:00:00") } },
-                { QStringLiteral("s-spaet"), { QStringLiteral("pass_remark"), QStringLiteral("2026-09-02T10:00:00"), QStringLiteral("2026-09-02T09:00:00") } } };
+                { QStringLiteral("s-spaet"), { QStringLiteral("pass_remark"), QStringLiteral("2026-09-02T10:00:00"), QStringLiteral("2026-09-02T09:00:00") } },
+                // Wie s-pass, aber in dem alten Lauf erst am 03.09. bewertet.
+                { QStringLiteral("s-fort"), { QStringLiteral("pass"), QStringLiteral("2026-09-01T10:00:00"), QStringLiteral("2026-09-01T14:00:00"),
+                                              QStringLiteral("2026-09-03T09:00:00") } } };
             auto u = [&](const char* id, const QStringList& areas, bool prep = false) {
                 QJsonObject s{ { QStringLiteral("id"), QLatin1String(id) }, { QStringLiteral("areas"), QJsonArray::fromStringList(areas) } };
                 if (prep) s.insert(QStringLiteral("kind"), QStringLiteral("prep"));
@@ -2591,6 +2625,13 @@ namespace
             pruefe(u("s-pass", { QStringLiteral("tag") }) == 0.8 && u("s-spaet", { QStringLiteral("tag") }) == 0.0
                    && u("s-pass", { QStringLiteral("leise"), QStringLiteral("tag") }) == 0.8,
                    QStringLiteral("Indikator: Hand-Schicht tageweise — Änderung nach dem Tag des Laufs zählt, am selben Tag nicht; das höchste Gewicht gilt"));
+            {
+                const QJsonObject fort{ { QStringLiteral("id"), QStringLiteral("s-fort") },
+                                        { QStringLiteral("areas"), QJsonArray{ QStringLiteral("tag") } } };
+                pruefe(u("s-fort", { QStringLiteral("tag") }) == 0.0 && u("s-pass", { QStringLiteral("tag") }) == 0.8
+                       && indikator::bewerte(fort, g, letzte).warum.contains(QStringLiteral("2026-09-03")),
+                       QStringLiteral("Indikator: Hand-Schicht misst gegen den Tag des Urteils, nicht den Start des Laufs; ohne Urteilszeit gilt der Start"));
+            }
             pruefe(u("s-pass", { QStringLiteral("uhr") }) == 0.9 && u("s-spaet", { QStringLiteral("uhr") }) == 0.0,
                    QStringLiteral("Indikator: Hand-Schicht mit Uhrzeit — verglichen wird gegen den Build am Urteil"));
             pruefe(u("s-pass", { QStringLiteral("code") }) == 0.5 && u("s-pass", { QStringLiteral("alt") }) == 0.0
@@ -3060,6 +3101,15 @@ namespace
             // Mit einer Bewertung gilt der Lauf als fortgesetzt; die Anwendung erfährt es.
             zeige(findeSchritt(QStringLiteral("s-01")));
             klicke(QStringLiteral("✓ Pass"));
+            {
+                const QString jetzt = schritt(findeSchritt(QStringLiteral("s-01"))).value(QStringLiteral("rated_at")).toString();
+                const QString aufPlatteZeit = leseJson(m_logPfad).value(QStringLiteral("steps")).toArray()
+                                                  .at(findeSchritt(QStringLiteral("s-01"))).toObject().value(QStringLiteral("rated_at")).toString();
+                pruefe(QDateTime::fromString(jetzt, Qt::ISODate).isValid() && jetzt.startsWith(QDate::currentDate().toString(Qt::ISODate))
+                       && aufPlatteZeit == jetzt
+                       && ergebnis::letzteErgebnisse(logOrdner(m_p.pfad)).value(QStringLiteral("s-01")).bewertet == jetzt,
+                       QStringLiteral("Urteilszeit: ein Urteil trägt rated_at mit Jahr, im Testlog und in der Ergebnis-DB (»%1«)").arg(jetzt));
+            }
             pruefe(!m_stehtHinweis->isHidden() && m_stehtBtn->isHidden()
                    && m_stehtText->text().contains(QStringLiteral("steht nicht mehr: probe")),
                    QStringLiteral("Zustand: ein begonnener Lauf, dem sein Zustand fehlt, bekommt eine Warnung"));

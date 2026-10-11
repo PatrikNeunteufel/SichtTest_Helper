@@ -125,6 +125,8 @@ namespace sichttest::ergebnis
             // Der Build am Urteil (Teil A): je Schritt, leer bei Urteilen ohne eigenen Stempel.
             q.exec(QStringLiteral("ALTER TABLE testschritt ADD COLUMN build_exe TEXT"));
             q.exec(QStringLiteral("ALTER TABLE testschritt ADD COLUMN build_timestamp TEXT"));
+            // Der Zeitpunkt des Urteils (ISO), leer bei Urteilen aus der Zeit davor.
+            q.exec(QStringLiteral("ALTER TABLE testschritt ADD COLUMN rated_at TEXT"));
             stelleUm(db);
             return db;
         }
@@ -201,7 +203,7 @@ namespace sichttest::ergebnis
         QSqlQuery ein(db);
         ein.prepare(QStringLiteral(
             "INSERT INTO testschritt (lauf_id, step_id, section, title, result, remark, screenshots, history,"
-            " build_exe, build_timestamp) VALUES (?,?,?,?,?,?,?,?,?,?)"));
+            " build_exe, build_timestamp, rated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"));
         int n = 0;
         const QJsonArray schritte = log.value(QStringLiteral("steps")).toArray();
         for (const QJsonValue& v : schritte)
@@ -220,6 +222,7 @@ namespace sichttest::ergebnis
             ein.addBindValue(alsText(s.value(QStringLiteral("history"))));
             ein.addBindValue(b.value(QStringLiteral("exe")).toString());
             ein.addBindValue(b.value(QStringLiteral("exe_timestamp")).toString());
+            ein.addBindValue(s.value(QStringLiteral("rated_at")).toString());
             if (!ein.exec())
             {
                 fehler = ein.lastError().text();
@@ -313,16 +316,21 @@ namespace sichttest::ergebnis
         QSqlDatabase db = oeffne(ablage, nullptr);
         if (!db.isOpen()) return letzte;
         QSqlQuery q(db);
-        // Spätere Läufe überschreiben frühere. Der Build am Urteil gilt, sonst der des Laufs.
+        // Spätere Urteile überschreiben frühere: geordnet nach dem Zeitpunkt des Urteils, ohne ihn
+        // nach dem Start des Laufs. Der Build am Urteil gilt, sonst der des Laufs.
         if (!q.exec(QStringLiteral(
                 "SELECT s.step_id, s.result, l.started,"
                 " CASE WHEN s.build_timestamp IS NULL OR s.build_timestamp = '' THEN l.build_timestamp"
-                "      ELSE s.build_timestamp END"
+                "      ELSE s.build_timestamp END,"
+                " COALESCE(s.rated_at, '')"
                 " FROM testschritt s JOIN testlauf l ON l.lauf_id = s.lauf_id"
-                " WHERE s.result IN ('pass','fail','pass_remark') ORDER BY l.started ASC")))
+                " WHERE s.result IN ('pass','fail','pass_remark')"
+                " ORDER BY CASE WHEN s.rated_at IS NULL OR s.rated_at = '' THEN l.started ELSE s.rated_at END ASC,"
+                "          l.started ASC")))
             return letzte;
         while (q.next())
-            letzte.insert(q.value(0).toString(), { q.value(1).toString(), q.value(2).toString(), q.value(3).toString() });
+            letzte.insert(q.value(0).toString(),
+                          { q.value(1).toString(), q.value(2).toString(), q.value(3).toString(), q.value(4).toString() });
         return letzte;
     }
 

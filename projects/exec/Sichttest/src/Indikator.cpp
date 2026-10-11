@@ -74,7 +74,7 @@ namespace sichttest::indikator
         if (it == letzte.constEnd())
             return { 1.0, QStringLiteral("noch nie verifiziert (kein Pass oder Fail in der Ergebnis-DB).") };
         if (it->ergebnis == QLatin1String("fail"))
-            return { 1.0, QStringLiteral("letzter Test FAIL (%1) — Fix nachtesten.").arg(it->gestartet.left(10)) };
+            return { 1.0, QStringLiteral("letzter Test FAIL (%1) — Fix nachtesten.").arg(it->wann().left(10)) };
 
         // Letzter Pass: dringend nur, wenn eine Area des Schritts seither geändert wurde — das
         // höchste solche Gewicht zählt.
@@ -84,14 +84,15 @@ namespace sichttest::indikator
         // Gegen diesen Build fiel der Pass: der Build am Urteil, sonst der des Laufs, sonst sein Start.
         const QString bezugText = it->buildStempel.isEmpty() ? it->gestartet : it->buildStempel;
         const QDateTime bezug = zeit(bezugText);
-        const QDate getestet = QDate::fromString(it->gestartet.left(10), Qt::ISODate);
+        // Getestet wurde am Tag des Urteils; ein Urteil ohne Zeitpunkt gilt am Start seines Laufs.
+        const QDate getestet = QDate::fromString(it->wann().left(10), Qt::ISODate);
         for (const QJsonValue& av : eigene)
         {
             const QJsonObject a = areas.value(av.toString()).toObject();
             if (a.isEmpty()) continue;
             const QString geaendert = a.value(QStringLiteral("changed")).toString();
             const double w = a.value(QStringLiteral("weight")).toDouble();
-            // Mit Uhrzeit gegen den Build des Urteils, mit reinem Datum tageweise gegen den Lauf.
+            // Mit Uhrzeit gegen den Build des Urteils, mit reinem Datum tageweise gegen den Tag des Urteils.
             bool neuer = false;
             if (geaendert.contains(QLatin1Char('T')))
                 neuer = zeit(geaendert).isValid() && bezug.isValid() && zeit(geaendert) > bezug;
@@ -105,7 +106,7 @@ namespace sichttest::indikator
                 d.u = w;
                 d.warum = QStringLiteral("Änderung »%1« vom %2 (Gewicht %3) nach letztem Pass (%4): %5")
                               .arg(av.toString(), geaendert).arg(w)
-                              .arg(it->gestartet.left(10), a.value(QStringLiteral("note")).toString());
+                              .arg(it->wann().left(10), a.value(QStringLiteral("note")).toString());
             }
         }
         // git-Schicht: ein Commit, der die Pfade einer Area nach dem Build des letzten Pass berührt
@@ -129,7 +130,7 @@ namespace sichttest::indikator
         }
         if (d.u <= 0.0)
             d.warum = QStringLiteral("letzter Test Pass (%1), keine neuere Änderung an den Areas dieses Schritts.")
-                          .arg(it->gestartet.left(10));
+                          .arg(it->wann().left(10));
         return d;
     }
 

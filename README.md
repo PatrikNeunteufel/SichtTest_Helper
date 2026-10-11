@@ -268,7 +268,7 @@ für den Ordner der Liste nennt:
 
 | Datei | Inhalt |
 |---|---|
-| `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`, bei ausgelösten Aktionen `actions`; dazu `build` und `summary`. Aus der Liste gehen `setup`, `test_db` und `areas` unverändert mit, die Nachbereitung steht unter `teardown_actions`. War eine Anwendung verbunden, nennt `steuerung` ihren Namen, ihre Version, die Version der DLL (`produkt`), `p`, `s` und den `zustand` der Verbindung |
+| `<Liste>_<Zeit>.testlog.json` | der Lauf: je Schritt `result` (`pass`, `pass_remark`, `fail`, `skip`, `open`), `remark`, `screenshots`, `rated`, `rated_at` (Zeitpunkt des Urteils, ISO), bei ausgelösten Aktionen `actions`; dazu `build` und `summary`. Aus der Liste gehen `setup`, `test_db` und `areas` unverändert mit, die Nachbereitung steht unter `teardown_actions`. War eine Anwendung verbunden, nennt `steuerung` ihren Namen, ihre Version, die Version der DLL (`produkt`), `p`, `s` und den `zustand` der Verbindung |
 | `<Liste>_<Zeit>.report.md` | derselbe Stand zum Lesen: zuerst Fail und Pass mit Befund samt Bemerkung und Bildern, dann Übersprungen, Offen, Pass |
 | `<Liste>_<Zeit>_<Kennung>_<n>.png` | die Screenshots |
 | `testergebnisse.sqlite` | je Ablage eine kleine SQLite-Datei über alle Läufe: je Lauf Summe und Build, je Schritt Urteil, Bemerkung und der Build, gegen den es fiel. Das Testlog bleibt die Wahrheit, die Datei ist der Index dazu |
@@ -288,6 +288,8 @@ Ein fortgesetzter Lauf ohne Verbindung behält, was sein Testlog schon nennt.
 Nennt die Projektdatei `gewichtung`, zeigt das Werkzeug an jedem offenen Schritt, wie dringend
 er wieder zu prüfen ist: **🔴** dringend (ab 0,7), **🟡** empfohlen (ab 0,3), ohne Zeichen
 unkritisch. Die Begründung steht am Schritt, die Listenwahl nennt je Liste die Zahl der 🔴 und 🟡.
+Als getestet gilt ein Schritt an dem Tag, an dem sein Urteil fiel — auch in einem Lauf, der
+Wochen vorher begonnen wurde; das letzte Ergebnis eines Schritts ist das jüngste Urteil.
 Ein Eintrag der Listenwahl beginnt mit dem Titel der Liste, dann die Zähler, dann der Dateiname;
 der Pfad steht im Tooltip.
 
