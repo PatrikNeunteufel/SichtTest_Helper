@@ -295,6 +295,12 @@ Welche Nachricht ein Rahmen trägt, steht im Feld **`nachricht`** (`{"nachricht"
 Eine Nachricht, die die DLL nicht kennt, beantwortet sie mit `antwort`, Status `unbekannt` (mit der
 `id`, falls die Nachricht eine trug); der Tester überliest Unbekanntes (§5).
 
+**Gemeldet und ausgehandelt wird von P nur die große Fassung.** `sts_fassung`, `p_min` / `p_max`
+im `hallo` und `p=` in `VERSION` nennen sie als Spanne; die kleine Fassung steht allein im Kopf
+(`STS_P_MINOR`). Eine DLL, die P 1.1 spricht, meldet deshalb „1 bis 1" — eine kleine Fassung
+ergänzt nur (hier die Nachricht `zustand`), und wer sie nicht kennt, überliest sie (Befund LV
+2026-10-11).
+
 Der Tester wartet je Aufruf 10 s (in der Liste je Aktion änderbar); für Aktionen mit
 `STS_WARTET_AUF_MENSCH` gilt keine Frist (§3). Bleibt die Antwort aus, gilt §6.3: der Handgriff
 erscheint als Text, eine verspätete Antwort wird verworfen.
@@ -709,7 +715,7 @@ sichttest-vX.Y.Z-win64/
 ├── include/   sichttest_steuerung.h · sichttest_steuerung.hpp · sichttest_steuerung_qt.hpp
 ├── bin/       SichttestSteuerung1.dll
 ├── sichttest/ Sichttest.exe mit seinem Qt
-└── VERSION    drei Zeilen: produkt=0.3.6 · s=1.0 · p=1
+└── VERSION    drei Zeilen: produkt=0.4.0 · s=1.1 · p=1 (von P nur die große Fassung)
 ```
 
 Gebaut wird das Paket nur als Release, ohne `.pdb`. Verbindlich stehen S und P im Kopf
