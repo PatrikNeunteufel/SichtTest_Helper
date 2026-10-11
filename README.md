@@ -361,6 +361,7 @@ Die Bilddateien bleiben liegen; ein neues Bild bekommt die nächste freie Nummer
 | Screenshot ansehen / löschen | Maus darüber (Vorschau), Doppelklick öffnet, Entf oder Rechtsklick löscht |
 | Befund abheften, Feld leeren | **🗄 Archivieren** |
 | Tab des Schritts nach vorn holen | Klick auf **Tab: …** in der Zeile unter dem Titel (Listen mit dem Feld `tab`) |
+| Mehr Platz für den Schritttext oder die Bemerkung | den Teiler zwischen beiden ziehen; die Stellung bleibt über das Schließen hinweg |
 | Fenster über dem Programm halten | Haken **Im Vordergrund** |
 | nur das Unerledigte | Haken **Nur offene und Fail zeigen** |
 | Befunde weitergeben | **Report-Pfad kopieren** und im Chat einfügen |

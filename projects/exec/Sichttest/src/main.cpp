@@ -297,6 +297,7 @@ namespace
                 return;
             }
             QSettings().setValue(QStringLiteral("geometrie"), saveGeometry());
+            QSettings().setValue(QStringLiteral("teiler"), m_teiler->saveState());
             e->accept();
         }
 
@@ -397,17 +398,26 @@ namespace
             m_warum->hide();
             col->addWidget(m_warum);
 
-            m_text = new QTextBrowser(rechts);
+            // Schritttext und Bemerkung teilen sich die Höhe über einen Teiler; seine Stellung
+            // merkt sich das Fenster (Wunsch Patrik 2026-10-11).
+            m_teiler = new QSplitter(Qt::Vertical, rechts);
+            m_teiler->setChildrenCollapsible(false);
+            m_text = new QTextBrowser(m_teiler);
             // Links `<schlüssel>:<wert>` lösen die Aktion aus, die die `abbildung` dem Schlüssel gibt.
             m_text->setOpenLinks(false);
             connect(m_text, &QTextBrowser::anchorClicked, this, [this](const QUrl& url) { folgeLink(url); });
-            col->addWidget(m_text, 2);
 
-            col->addWidget(new QLabel(
-                QStringLiteral("Bemerkung (bei Fail: was war erwartet, was ist passiert?):"), rechts));
-            m_bemerkung = new QPlainTextEdit(rechts);
+            auto* unten = new QWidget(m_teiler);
+            auto* untenLay = new QVBoxLayout(unten);
+            untenLay->setContentsMargins(0, 0, 0, 0);
+            untenLay->addWidget(new QLabel(
+                QStringLiteral("Bemerkung (bei Fail: was war erwartet, was ist passiert?):"), unten));
+            m_bemerkung = new QPlainTextEdit(unten);
             m_bemerkung->installEventFilter(this);
-            col->addWidget(m_bemerkung, 1);
+            untenLay->addWidget(m_bemerkung, 1);
+            m_teiler->setStretchFactor(0, 2);
+            m_teiler->setStretchFactor(1, 1);
+            col->addWidget(m_teiler, 1);
 
             auto* bildZeile = new QHBoxLayout();
             auto* bildBtn = new QPushButton(QStringLiteral("📋 Screenshot anhängen"), rechts);
@@ -668,6 +678,7 @@ namespace
 
             const QSettings einstellungen;
             restoreGeometry(einstellungen.value(QStringLiteral("geometrie")).toByteArray());
+            m_teiler->restoreState(einstellungen.value(QStringLiteral("teiler")).toByteArray());
             if (einstellungen.value(QStringLiteral("vorn")).toBool())
             {
                 const QSignalBlocker ruhe(m_vorn);
@@ -1212,13 +1223,16 @@ namespace
             // Nachtest-Indikator: 🔴 dringend, 🟡 empfohlen — nur an offenen Schritten.
             const QString marke = r == QLatin1String("open")
                 ? indikator::marke(m_dringlich.value(s.value(QStringLiteral("id")).toString()).u) : QString();
-            it->setText(QStringLiteral("%1  %2  %3%4%5")
+            // Der Titel vorn, die Kennung dahinter — gesucht wird nach dem Titel (Wunsch Patrik
+            // 2026-10-11, wie in der Listenwahl). Ohne Titel steht die Kennung allein.
+            const QString id = s.value(QStringLiteral("id")).toString();
+            const QString titel = s.value(QStringLiteral("title")).toString().trimmed();
+            it->setText(QStringLiteral("%1  %2%3%4")
                 .arg(zeichen(r) + (marke.isEmpty() ? QString() : QLatin1Char(' ') + marke),
-                     s.value(QStringLiteral("id")).toString(),
-                     s.value(QStringLiteral("title")).toString(),
+                     titel.isEmpty() ? id : QStringLiteral("%1  ·  %2").arg(titel, id),
                      text ? QStringLiteral("  ✎") : QString(),
                      bild ? QStringLiteral("  🖼") : QString()));
-            it->setToolTip(s.value(QStringLiteral("title")).toString());
+            it->setToolTip(titel.isEmpty() ? id : QStringLiteral("%1  %2").arg(id, titel));
             const QString f = farbe(r);
             it->setForeground(f.isEmpty() ? palette().color(QPalette::Text) : QColor(f));
         }
@@ -2907,6 +2921,25 @@ namespace
                        && !eintrag.contains(QStringLiteral("listen")) && QDir::fromNativeSeparators(tipp) == QLatin1String("listen/studio.testprotokoll.json"),
                        QStringLiteral("Listenwahl: der Titel steht vorn, der Dateiname hinten, der Pfad im Tooltip (»%1«)").arg(eintrag));
             }
+            {
+                // Der Teiler: Schritttext oben, Bemerkung unten; eine verstellte Stellung kommt
+                // aus dem gemerkten Zustand wieder.
+                const bool aufbau = m_teiler->orientation() == Qt::Vertical && m_teiler->count() == 2
+                                    && m_teiler->indexOf(m_text) == 0 && m_bemerkung->parentWidget() == m_teiler->widget(1);
+                const QByteArray merk = m_teiler->saveState();
+                m_teiler->setSizes({ 100, 300 });
+                const QList<int> verstellt = m_teiler->sizes();
+                const QByteArray zustand = m_teiler->saveState();
+                m_teiler->setSizes({ 300, 100 });
+                const bool wieder = m_teiler->restoreState(zustand) && m_teiler->sizes() == verstellt;
+                m_teiler->restoreState(merk);
+                pruefe(aufbau && wieder,
+                       QStringLiteral("Teiler: Schritttext und Bemerkung lassen sich gegeneinander verschieben, die Stellung wird gemerkt"));
+                const QListWidgetItem* zeile = eintrag(findeSchritt(QStringLiteral("s-01")));
+                pruefe(zeile && zeile->text().contains(QStringLiteral("Eins  ·  s-01")) && zeile->toolTip() == QStringLiteral("s-01  Eins"),
+                       QStringLiteral("Schrittliste: der Titel steht vorn, die Kennung dahinter, beide im Tooltip (»%1«)")
+                           .arg(zeile ? zeile->text() : QString()));
+            }
             pruefe(QFileInfo(logOrdner(studio)) == QFileInfo(wurzel.filePath(QStringLiteral("ablage/studio")))
                    && QFileInfo(logOrdner(composer)) == QFileInfo(wurzel.filePath(QStringLiteral("md/sichttest-logs"))),
                    QStringLiteral("Ablage je Listenordner; ohne Angabe sichttest-logs neben der Liste"));
@@ -3208,6 +3241,7 @@ namespace
         QLabel*   m_statLage = nullptr;
         QTableWidget* m_statLaeufe = nullptr;
         QLabel*   m_statHinweis = nullptr;    // was »Ältere Testlogs einlesen« getan hat
+        QSplitter* m_teiler = nullptr;        // zwischen Schritttext und Bemerkung
         QTableWidget* m_statSchritte = nullptr;
         QPushButton* m_statOeffnen = nullptr;
         bool      m_statistikImTest = false;  // Selbsttest: füllen, ohne das Fenster zu zeigen
