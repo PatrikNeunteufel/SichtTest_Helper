@@ -1,0 +1,35 @@
+{
+  "_about": "Example list using the fields that become actions through abbildung in ../.sichttest/sichttest.projekt.json. test_db runs before setup; test_db.ende is the teardown.",
+
+  "title": "Database view",
+  "description": "Queries and the database tab, against a seeded test database.",
+  "anwendung": "MyApp",
+
+  "test_db": { "name": "mytest", "seed": [ "seed/customers.sql", "seed/orders.sql" ] },
+  "setup": { "close_all_tabs": true, "open": [ "demo.myproj" ] },
+
+  "steps": [
+    {
+      "id": "db-00", "kind": "prep", "section": "A. Queries", "title": "Vorbereiten",
+      "text": "Database tab in front, test database `mytest` connected.",
+      "tab": "Database"
+    },
+    {
+      "id": "db-01", "section": "A. Queries", "title": "Query returns all customers",
+      "text": "Run [this query](sql:SELECT%20*%20FROM%20customers) in the [Database](tab:Database) tab.\n\n**Pass** if 25 rows appear.",
+      "tab": "Database",
+      "areas": [ "database" ]
+    },
+    {
+      "id": "db-02", "section": "A. Queries", "title": "Settings survive a restart",
+      "text": "Change the row limit to 50, then let the application restart.\n\n**Pass** if the limit is still 50.",
+      "restart": true,
+      "areas": [ "database", "settings" ]
+    },
+    {
+      "id": "db-03", "section": "B. Export", "title": "Export opens the result",
+      "text": "Export the result, then open [the export](file:out/export.csv).",
+      "areas": [ "export" ]
+    }
+  ]
+}

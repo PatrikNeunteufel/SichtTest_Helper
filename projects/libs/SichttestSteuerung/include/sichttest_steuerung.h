@@ -1,7 +1,7 @@
 /* sichttest_steuerung.h — Schnittstelle S der DLL SichttestSteuerung (C).
  *
  * Die einzige verbindliche Grenze zwischen der geprüften Anwendung und dem
- * Tester Sichttest.exe. Beschreibung: docs/Konzept_Steuerung.md §3 bis §5.
+ * Tester Sichttest.exe. Beschreibung: docs/Specification.md §3 bis §5.
  *
  * Grundsätze: nur C-Typen; Zeichenketten sind UTF-8, nullterminiert; Speicher
  * wechselt nie den Besitzer (was die DLL liefert, gilt bis zum nächsten Aufruf
@@ -79,7 +79,7 @@ typedef struct {
 typedef struct {
     uint32_t    groesse;         /* sizeof(sts_konfig) */
     uint16_t    s_major, s_minor;/* STS_S_MAJOR / STS_S_MINOR der Anwendung */
-    const char* anwendung;       /* "LumiViz", "CommStudio" — der Name, den Listen nennen */
+    const char* anwendung;       /* "MyApp" — der Name, den Listen nennen */
     const char* version;         /* Version der Anwendung, landet im Testlog */
     const char* projekt_datei;   /* optional: Pfad zur Projektdatei in einem Ordner .sichttest; sonst Suchregel §7 */
 } sts_konfig;

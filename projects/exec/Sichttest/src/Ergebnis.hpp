@@ -1,4 +1,4 @@
-// Ergebnis-DB (Konzept §14.1 Teil B): je Ablage eine kleine SQLite-Datei
+// Ergebnis-DB (Spezifikation §6.6): je Ablage eine kleine SQLite-Datei
 // `testergebnisse.sqlite`, in die jeder Lauf bei jedem Schreiben des Testlogs
 // gespiegelt wird. Das Testlog bleibt die Wahrheit; die DB ist der Index über
 // alle Läufe und Builds — für die Statistik und den Nachtest-Indikator.

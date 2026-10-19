@@ -143,7 +143,7 @@ namespace
                 if (fi.isDir()) ordner = fi.absoluteFilePath();
                 else if (fi.fileName().endsWith(QLatin1String(".projekt.json"), Qt::CaseInsensitive))
                 {
-                    // Sichttest <projektdatei>: deren Listen (Konzept §7).
+                    // Sichttest <projektdatei>: deren Listen (Spezifikation §7).
                     m_projektGenannt = fi.absoluteFilePath();
                     ordner = ordnerZuProjektDatei(m_projektGenannt);
                 }
@@ -161,7 +161,7 @@ namespace
             }
             setzeOrdner(ordner, datei);
 
-            // Der Tester lauscht immer (Konzept §4); der Selbsttest ruft starte() nicht
+            // Der Tester lauscht immer (Spezifikation §4); der Selbsttest ruft starte() nicht
             // und nimmt einen eigenen Kanal.
             m_steuerung.lausche(KanalServer::kanalName());
         }
@@ -450,7 +450,7 @@ namespace
             col->addWidget(m_historie);
             connect(m_archivBtn, &QPushButton::clicked, this, [this]() { archiviereBefund(); });
 
-            // Aktionen des Punkts (Konzept §6): laufen nie von selbst, nur auf den Knopf.
+            // Aktionen des Punkts (Spezifikation §6): laufen nie von selbst, nur auf den Knopf.
             auto* aktionsZeile = new QHBoxLayout();
             m_herstellen = new QPushButton(QStringLiteral("▶ Herstellen"), rechts);
             m_vorbereitungBtn = new QPushButton(QStringLiteral("↺ Vorbereitung"), rechts);
@@ -692,7 +692,7 @@ namespace
             m_ordner = ordner;
             m_combo->clear();
 
-            // Projektdatei (Konzept §7): ausdrücklich genannt, sonst vom Ordner aufwärts gesucht.
+            // Projektdatei (Spezifikation §7): ausdrücklich genannt, sonst vom Ordner aufwärts gesucht.
             // Mit ihr zählen ihre Listenordner und ihre Ablage, ohne sie der Ordner wie bisher.
             if (!m_projektGenannt.isEmpty() && ordnerZuProjektDatei(m_projektGenannt) != ordner)
                 m_projektGenannt.clear();
@@ -1589,7 +1589,7 @@ namespace
             m_summe->setToolTip(QDir::toNativeSeparators(reportPfad()));
         }
 
-        // --- Aktionen (Konzept §6) ---------------------------------------------
+        // --- Aktionen (Spezifikation §6) ---------------------------------------------
 
         struct Lauf
         {
@@ -3374,7 +3374,7 @@ int main(int argc, char** argv)
     QCoreApplication::setOrganizationName(QStringLiteral("SichtTestHelper"));
     QCoreApplication::setApplicationName(QStringLiteral("Sichttest"));
 
-    // --steuerung: so startet die DLL den Tester, wenn keiner lauscht (Konzept §4).
+    // --steuerung: so startet die DLL den Tester, wenn keiner lauscht (Spezifikation §4).
     // Er lauscht ohnehin; das Argument ist kein Ziel.
     QStringList args = QCoreApplication::arguments();
     const bool vonAnwendungGestartet = args.removeAll(QStringLiteral("--steuerung")) > 0;

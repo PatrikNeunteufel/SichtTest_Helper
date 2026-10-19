@@ -1,5 +1,5 @@
 // Gegenprobe — kleine Anwendung ohne Qt. Sie lädt die DLL so, wie es eine
-// geprüfte Anwendung tut (Konzept §8): zur Laufzeit, mit vollem Pfad, ohne
+// geprüfte Anwendung tut (Spezifikation §8): zur Laufzeit, mit vollem Pfad, ohne
 // gegen sie gelinkt zu sein. Der Selbsttest von Sichttest.exe startet sie.
 //
 // Aufruf:  Gegenprobe <dll> <szenario>

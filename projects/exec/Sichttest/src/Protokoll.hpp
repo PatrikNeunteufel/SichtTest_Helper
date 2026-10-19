@@ -6,7 +6,7 @@
 // mit id / section / title / text).
 //
 // Ein Punkt kann Aktionen tragen, die das Werkzeug in der geprüften Anwendung
-// auslöst (docs/Konzept_Steuerung.md §6): in Markdown als Code-Stück
+// auslöst (docs/Specification.md §6): in Markdown als Code-Stück
 // `aktion: name schlüssel=wert`, in JSON als "aktionen". Ein Punkt, dessen
 // Titel mit »Vorbereiten« beginnt (JSON: "kind": "prep"), ist eine
 // Vorbereitung: er bekommt kein Urteil und zählt nicht mit.
@@ -35,7 +35,7 @@ namespace sichttest
         QString    anwendung;  // Name, unter dem sich die Anwendung meldet; leer = die einzige verbundene
         QJsonArray nachbereitung; // Aktionen für das Ende des Laufs (nur JSON)
         QJsonArray nachbereitungLog; // was davon im Lauf ausgelöst wurde (Testlog: teardown_actions)
-        QJsonObject steuerung; // mit welcher Anwendung und DLL der Lauf lief (Testlog: steuerung, Konzept §5)
+        QJsonObject steuerung; // mit welcher Anwendung und DLL der Lauf lief (Testlog: steuerung, Spezifikation §5)
         QJsonObject build;     // gegen welche Exe der Lauf lief: exe, exe_timestamp (ISO) (Testlog: build)
         QJsonObject zustaende; // was die Anwendung zuletzt gemeldet hat: name -> { steht, text } (Testlog: zustaende)
         QJsonObject setup;     // Felder des Comm Studio, wie sie in der Liste stehen; gehen
@@ -57,7 +57,7 @@ namespace sichttest
     Protokoll ausMarkdown(const QString& text, const QString& pfad);
     Protokoll ausJson(const QJsonObject& wurzel, const QString& pfad);
 
-    // --- Aktionen (Konzept §6) ----------------------------------------------
+    // --- Aktionen (Spezifikation §6) ----------------------------------------------
     // Eine Aktion ist ein Objekt { "aktion": Name, "mit": { Schlüssel: Wert }, "text"?, "frist"? }.
     // Ein Name mit @ davor verweist auf die Aktionen des Punkts mit dieser Kennung.
 
@@ -86,7 +86,7 @@ namespace sichttest
     Zaehler zaehle(const QJsonArray& schritte);
     QString zeichen(const QString& ergebnis);
 
-    // --- Befund-Archiv (Konzept §14.1 Teil D) --------------------------------
+    // --- Befund-Archiv (Spezifikation §6.8) --------------------------------
     // Bemerkung und Bilder des Schritts wandern mit Zeitpunkt, Urteil und dessen Build nach
     // history[]; das Feld wird frei, das Urteil bleibt. false = es gab nichts zu archivieren.
     // Die Bilddateien bleiben liegen.

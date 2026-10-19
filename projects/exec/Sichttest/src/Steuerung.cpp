@@ -319,7 +319,7 @@ namespace sichttest
         exe += QLatin1String("/Gegenprobe.exe");
         dll = hier;
         dll.replace(QLatin1String("/exec/Sichttest/"), QLatin1String("/libs/SichttestSteuerung/"));
-        // Die große Fassung von S steht im Dateinamen (Konzept §5).
+        // Die große Fassung von S steht im Dateinamen (Spezifikation §5).
         dll += QStringLiteral("/SichttestSteuerung%1.dll").arg(STS_S_MAJOR);
         return QFileInfo::exists(exe) && QFileInfo::exists(dll);
     }
@@ -364,7 +364,7 @@ namespace sichttest
         if (!QFileInfo::exists(gegenprobe) || !QFileInfo::exists(dll)) return fehler;
 
         // Im Build-Baum: die Produktversion kommt als Define aus Solution.json, und die
-        // Schablone der Datei VERSION im Paket nennt S und P wie der Kopf (Konzept §9).
+        // Schablone der Datei VERSION im Paket nennt S und P wie der Kopf (Spezifikation §9).
         {
             QDir d(hier);
             for (int n = 0; n < 10 && !d.exists(QStringLiteral("Solution.json")); ++n)

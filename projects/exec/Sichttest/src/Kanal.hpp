@@ -1,4 +1,4 @@
-// Kanal des Testers (Konzept §4): der Tester lauscht auf einer benannten Pipe,
+// Kanal des Testers (Spezifikation §4): der Tester lauscht auf einer benannten Pipe,
 // die DLL in der geprüften Anwendung verbindet sich.
 //
 // Rahmen: 4 Byte Länge (little endian) + ein JSON-Objekt in UTF-8.

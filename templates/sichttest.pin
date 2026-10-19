@@ -1,0 +1,24 @@
+# ==============================================================================
+# sichttest.pin — which Sichttest package this project consumes
+# ==============================================================================
+# Copy to the root of your repository. Changing the version = edit this file
+# and commit it. The pin lives only here:
+#   - with CMakeCraft (v0.10.0 or later): the external "sichttest" in
+#     Solution.json refers to it with "pin": "sichttest.pin"
+#     (templates/integration/Solution.external.json)
+#   - without CMakeCraft: craft_package_fetch(... PIN_FILE ...) reads it
+#     (templates/integration/sichttest.cmake)
+#
+# SICHTTEST_SHA256 is the checksum of the file UPLOADED to the release (the
+# .zip.sha256 next to it, or the "digest" of the GitHub API) — not that of a
+# local package build, which changes with every build.
+# ==============================================================================
+
+set(SICHTTEST_VERSION "v0.4.0")
+set(SICHTTEST_URL     "https://github.com/PatrikNeunteufel/SichtTest_Helper/releases/download/${SICHTTEST_VERSION}/sichttest-${SICHTTEST_VERSION}-win64.zip")
+set(SICHTTEST_SHA256  "fdb97654b37c3939abe07a89d439424cecf849a8290eab65278eea7e35a5882e")
+
+# Optional fallback sources when the URL cannot be reached. Relative paths are
+# relative to the folder of this file (for example a local clone of
+# SichtTest_Helper with a package built by hand).
+# set(SICHTTEST_FALLBACK_PATHS "../SichtTest_Helper/out/package")

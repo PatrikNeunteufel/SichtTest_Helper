@@ -1,4 +1,4 @@
-// Nachtest-Indikator (Konzept §14.1 Teil C): wie dringend ein Schritt wieder zu
+// Nachtest-Indikator (Spezifikation §6.7): wie dringend ein Schritt wieder zu
 // prüfen ist. Aus drei Quellen — dem letzten verifizierten Ergebnis je Schritt
 // (Ergebnis-DB der Ablage), der Hand-Schicht der Gewichtung (weight, changed,
 // retest_steps) und der git-Schicht (jüngster Commit je Area).

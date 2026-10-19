@@ -1,0 +1,21 @@
+{
+  "_about": "For applications that build with CMakeCraft (v0.10.0 or later). Merge the external below into the 'externals' block of your Solution.json and name \"sichttest\" in the 'externals' list of the executable that registers the actions. The version is in sichttest.pin (templates/sichttest.pin). Nothing is linked: the target gets the include path and the define SICHTTEST_VORHANDEN, and the DLL plus the tester folder are copied next to the executable when it is built.",
+
+  "externals": {
+    "sichttest": {
+      "description": "Sichttest control: prebuilt package with headers, SichttestSteuerung1.dll and the tester in the folder sichttest; nothing is linked",
+      "skip": false,
+      "archive": true,
+      "pin": "sichttest.pin",
+      "platforms": [ "windows" ],
+      "include_dirs": [ "include" ],
+      "define": "SICHTTEST_VORHANDEN",
+      "runtime": { "files": [ "bin/SichttestSteuerung1.dll" ], "dirs": [ "sichttest" ] }
+    }
+  },
+
+  "_executable_example": "In the definition of your executable:",
+  "executables": [
+    { "name": "MyApp", "externals": [ "Qt6", "sichttest" ] }
+  ]
+}

@@ -2,7 +2,7 @@
 //
 // Je Sitzung ein Faden: er verbindet, tauscht hallo/willkommen und liest danach
 // Nachrichten des Testers. Aufrufe legt er in eine Warteschlange; ausgeführt
-// werden sie nur in sts_pumpe(), also im Thread der Anwendung (Konzept §3).
+// werden sie nur in sts_pumpe(), also im Thread der Anwendung (Spezifikation §3).
 
 #include "sichttest_steuerung.h"
 

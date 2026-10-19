@@ -1,0 +1,18 @@
+{
+  "_about": "Example of a complete project: an application whose JSON lists use the fields setup, tab, restart, sql and test_db of the tool's format. The project file decides which action of the application each field triggers. Open with: Sichttest examples/project",
+
+  "schema": 1,
+  "anwendung": "MyApp",
+  "listen": [ { "ordner": "lists", "ablage": "sichttest-logs" } ],
+  "gewichtung": { "hand": [ "lists/test-gewichtung.json" ], "git": [ "lists/gitGewichtung.json" ] },
+  "abbildung": {
+    "setup.close_all_tabs": "close_all_tabs",
+    "setup.open":           "open_file path",
+    "tab":                  "show_tab title",
+    "restart":              "restart",
+    "sql":                  "insert_sql sql",
+    "file":                 "open_file path",
+    "test_db":              "testdb_setup name seed fortgesetzt",
+    "test_db.ende":         "testdb_teardown wenn=test_db"
+  }
+}

@@ -2,7 +2,7 @@
 # =============================================================================
 # gewichtung_autoupdate.py — git-Schicht des Nachtest-Indikators
 # =============================================================================
-# Teil des Werkzeugs Sichttest (docs/Konzept_Steuerung.md §14.1 Teil C).
+# Teil des Werkzeugs Sichttest (docs/Specification.md §6.7).
 # Herkunft: Comm Studio, tools/gewichtung_autoupdate.py (2026-06-12); hier
 # verallgemeinert — die Pfade kommen aus der Projektdatei, nicht aus dem Skript.
 #

@@ -1,11 +1,11 @@
-// sichttest_steuerung_qt.hpp — Zusatz für Qt-Anwendungen (Konzept §3, §8).
+// sichttest_steuerung_qt.hpp — Zusatz für Qt-Anwendungen (Spezifikation §3, §8).
 //
 // Stellt die Rückrufe im GUI-Thread zu und nimmt QString und QJsonObject.
 // Wird in der Anwendung übersetzt, also mit deren Qt und deren Compiler;
 // braucht nur QtCore und kein moc.
 //
 //     if (QCoreApplication::arguments().contains("--testing")) {
-//         m_steuerung = sichttest::Steuerung::lade("LumiViz", version, &grund);
+//         m_steuerung = sichttest::Steuerung::lade("MyApp", version, &grund);
 //         if (m_steuerung) {
 //             m_steuerung->aktion("panel_zeigen", "Holt ein Panel nach vorn", "name=<Titel>",
 //                 [this](const QJsonObject& arg) -> sichttest::Ergebnis {

@@ -1,4 +1,4 @@
-// Sichttest — die Projektdatei `sichttest.projekt.json` (docs/Konzept_Steuerung.md §7).
+// Sichttest — die Projektdatei `sichttest.projekt.json` (docs/Specification.md §7).
 //
 // Eine Datei je Anwendung, im Repo der Anwendung. Sie trägt, was der Tester über
 // das Projekt wissen muss und was sich ändern kann, ohne dass jemand übersetzt:
@@ -62,7 +62,7 @@ namespace sichttest
     // Abbildung eines Felds ("tab", "setup.open", …) auf eine Aktion: aus
     // "tab_zeigen titel" wird aktion = tab_zeigen, schluessel = { titel }.
     // Ein Stück "wenn=<zustand>" ist kein Schlüssel: es nennt den Zustand der Anwendung, für
-    // den die Aktion da ist (Konzept §14.1 Teil A), und kommt in *wenn an.
+    // den die Aktion da ist (Spezifikation §6.2), und kommt in *wenn an.
     bool abbildung(const Projekt& projekt, const QString& feld, QString& aktion, QStringList& schluessel,
                    QString* wenn = nullptr);
 }

@@ -1,0 +1,37 @@
+{
+  "_about": "Template of a JSON list for Sichttest (*.testprotokoll.json). Keys starting with _ are ignored. Action names belong to your application. Specification: docs/Specification.md, section 6.",
+
+  "title": "Visual test: <feature>",
+  "description": "What this list covers, in one or two sentences.",
+  "anwendung": "MyApp",
+
+  "_vorbereitung": "Preparation of the whole list: runs on 'Ausführen' (run) before the first step; text is the manual fallback.",
+  "vorbereitung": [
+    { "aktion": "open_file", "mit": { "path": "examples/demo.myproj" }, "text": "Open the demo project" },
+    { "aktion": "testdb_setup", "mit": { "name": "mytest", "resumed": "{fortgesetzt}" },
+      "text": "Set up the test database", "frist": 60 }
+  ],
+
+  "_nachbereitung": "Teardown at the end of the run (on completion and on closing). wenn = the state of your application this action is for; it is only offered while the application reports that state as standing.",
+  "nachbereitung": [
+    { "aktion": "testdb_teardown", "wenn": "test_db", "text": "Remove the test database" }
+  ],
+
+  "steps": [
+    {
+      "id": "feat-00", "kind": "prep", "section": "A. <First section>", "title": "Vorbereiten",
+      "text": "Load template A.",
+      "aktionen": [ { "aktion": "load_template", "mit": { "file": "presets/a.tpl" } } ]
+    },
+    {
+      "id": "feat-01", "section": "A. <First section>", "title": "<What is checked>",
+      "text": "*Do:* <the manual step>. Open the [Database](tab:Database) tab.\n\n*See:* <what must be visible>.",
+      "areas": [ "database" ],
+      "aktionen": [ { "aktion": "set_marker", "mit": { "time": "0:20" }, "text": "Set the marker to 0:20" } ]
+    },
+    {
+      "id": "feat-02", "section": "B. <Second section>", "title": "By hand only",
+      "text": "*Do:* make the window narrower. *See:* the view does not wrap."
+    }
+  ]
+}

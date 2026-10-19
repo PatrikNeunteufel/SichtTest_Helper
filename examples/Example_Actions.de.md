@@ -7,7 +7,7 @@ wenn diese mit `--testing` läuft und die Aktionen angemeldet hat. Ohne Verbindu
 wie bei einer Liste ohne Aktionen — der Handgriff steht immer als Text da.
 
 - [ ] **V0 Vorbereiten:** Anwendung starten und das Beispielprojekt öffnen.
-      `aktion: datei_oeffnen pfad="beispiele\demo.projekt.json"`
+      `aktion: datei_oeffnen pfad="beispiele\demo.meinprojekt"`
 
 ## A. Ansicht
 

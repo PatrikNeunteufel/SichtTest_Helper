@@ -1,0 +1,18 @@
+{
+  "title": "Example list (JSON)",
+  "description": "The JSON format of the tool in its smallest form: title, description, steps with id, section, title, text (Markdown). Optional exe.",
+  "steps": [
+    {
+      "id": "ex-start",
+      "section": "A. Start",
+      "title": "Program starts",
+      "text": "The main window appears without an error message.\n\n**Pass** if the title shows the version."
+    },
+    {
+      "id": "ex-menu",
+      "section": "B. Operation",
+      "title": "Context menu",
+      "text": "Right-clicking an entry shows only what is possible there."
+    }
+  ]
+}

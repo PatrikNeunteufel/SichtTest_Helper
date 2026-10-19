@@ -1,0 +1,9 @@
+{
+  "auto_weight": 0.5,
+  "retest_steps": { "db-03": "Export path changed, retest" },
+  "areas": {
+    "database": { "weight": 0.8, "changed": "2026-10-10", "note": "Query builder rebuilt", "paths": [ "src/db/*" ] },
+    "settings": { "weight": 0.3, "changed": "2026-09-01", "paths": [ "src/settings/*" ] },
+    "export":   { "weight": 0.5, "changed": "2026-10-12T14:30:00", "paths": [ "src/export/*" ] }
+  }
+}

@@ -1,4 +1,4 @@
-// Kanal der DLL zum Tester (Konzept §4): eine benannte Pipe, direkt über die
+// Kanal der DLL zum Tester (Spezifikation §4): eine benannte Pipe, direkt über die
 // Windows-API — ohne Qt. Der Tester lauscht, die DLL verbindet sich.
 //
 // Rahmen: 4 Byte Länge (little endian) + ein JSON-Objekt in UTF-8.

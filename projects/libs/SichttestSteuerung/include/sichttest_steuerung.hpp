@@ -1,6 +1,6 @@
 // sichttest_steuerung.hpp — kleiner Kopf für C++ über der C-Schnittstelle S.
 //
-// Lädt die DLL zur Laufzeit (Konzept §8): mit vollem Pfad aus dem Ordner der
+// Lädt die DLL zur Laufzeit (Spezifikation §8): mit vollem Pfad aus dem Ordner der
 // Exe, nie über den Suchpfad, und nur dort, wo die Anwendung es verlangt.
 // Die Anwendung linkt nicht gegen die DLL; dieser Kopf wird in der Anwendung
 // übersetzt und braucht nur C++17.

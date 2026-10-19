@@ -1,0 +1,35 @@
+{
+  "_about": "Project file for Sichttest. Copy to <your repo>/.sichttest/sichttest.projekt.json. All paths are relative to the repo root (the folder above .sichttest). Keys starting with _ are ignored; delete what you do not need. Specification: docs/Specification.md, section 7.",
+
+  "schema": 1,
+
+  "_anwendung": "Name your application reports in sts_konfig.anwendung / Steuerung::lade(). Lists without their own **Anwendung:** line use it.",
+  "anwendung": "MyApp",
+
+  "_start": "How the tool starts the application if none has connected yet in this session. Remove to start it by hand.",
+  "start": { "exe": "out/build/release/MyApp.exe", "argumente": ["--testing"] },
+
+  "_listen": "Folders (or single files) with lists. ablage = where test logs, reports, screenshots and testergebnisse.sqlite go. muster = optional file pattern. A folder that does not exist is skipped silently.",
+  "listen": [
+    { "ordner": "tests/sichttest", "ablage": "tests/sichttest-logs" },
+    { "ordner": "docs", "muster": "Sichttest_*.md", "ablage": "tests/sichttest-logs" }
+  ],
+
+  "_gewichtung": "Switches the retest indicator on (even with empty arrays). hand = files you maintain (template: templates/test-gewichtung.json); git = files the git hook writes, local to the machine, not versioned. hand[i] belongs to git[i].",
+  "gewichtung": {
+    "hand": [ "tests/sichttest/test-gewichtung.json" ],
+    "git":  [ "tests/sichttest/gitGewichtung.json" ]
+  },
+
+  "_abbildung": "Only needed if your JSON lists use the fields setup.*, tab, restart, sql, test_db, test_db.ende, or if you want your own link schemes. Value: action name, then the keys passed on as arguments. fortgesetzt is filled by the tool (true when the run is being resumed). wenn=<state> ties a teardown to a state your application reports.",
+  "abbildung": {
+    "setup.close_all_tabs": "close_all_tabs",
+    "setup.open":           "open_file path",
+    "tab":                  "show_tab title",
+    "restart":              "restart",
+    "sql":                  "insert_sql sql",
+    "file":                 "open_file path",
+    "test_db":              "testdb_setup name seed fortgesetzt",
+    "test_db.ende":         "testdb_teardown wenn=test_db"
+  }
+}

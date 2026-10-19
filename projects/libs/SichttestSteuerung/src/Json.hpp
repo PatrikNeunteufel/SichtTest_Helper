@@ -1,4 +1,4 @@
-// Der kleine JSON-Leser und -Schreiber der DLL (Konzept §4, „Rahmen").
+// Der kleine JSON-Leser und -Schreiber der DLL (Spezifikation §4, „Rahmen").
 //
 // Gelesen wird nur die oberste Ebene einer Nachricht: Schlüssel → Rohtext des
 // Werts. Was darunter liegt (die Argumente einer Aktion), reicht die DLL als

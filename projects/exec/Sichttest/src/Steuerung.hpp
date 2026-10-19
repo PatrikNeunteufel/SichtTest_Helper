@@ -1,4 +1,4 @@
-// Steuerung — die Seite des Testers im Protokoll P (Konzept §4, §5).
+// Steuerung — die Seite des Testers im Protokoll P (Spezifikation §4, §5).
 //
 // Nimmt Anwendungen an, die sich über die DLL melden (hallo → willkommen oder
 // abgelehnt), kennt deren Aktionen und schickt Aufrufe. Je Verbindung läuft
