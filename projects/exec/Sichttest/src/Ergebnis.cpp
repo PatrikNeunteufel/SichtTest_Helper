@@ -19,7 +19,7 @@ namespace sichttest::ergebnis
     {
         const QString kVerbindung = QStringLiteral("sichttest_ergebnisse");
 
-        // Bestandszeilen tragen den vollen Pfad des Testlogs (Comm Studio bis 2026-10-10). Sie
+        // Bestandszeilen tragen den vollen Pfad des Testlogs (ältere Tester). Sie
         // werden einmalig auf den Dateinamen gekürzt. Tragen zwei Zeilen danach denselben Namen
         // (die Ablage wurde einmal kopiert und weiterbenutzt), bleibt die jüngere.
         void stelleUm(QSqlDatabase& db)
@@ -88,7 +88,7 @@ namespace sichttest::ergebnis
                                           .arg(QDir::toNativeSeparators(pfad), db.lastError().text());
                 return {};
             }
-            // Das Schema des Comm Studio, Wort für Wort; was dazukam, als stilles ALTER
+            // Das ursprüngliche Schema, Wort für Wort; was dazukam, als stilles ALTER
             // (scheitert, wenn die Spalte schon da ist).
             QSqlQuery q(db);
             q.exec(QStringLiteral(

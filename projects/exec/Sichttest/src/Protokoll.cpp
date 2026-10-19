@@ -344,7 +344,7 @@ namespace sichttest
         p.nachbereitung = wurzel.value(QStringLiteral("nachbereitung")).toArray();
 
         // Was für die ganze Liste herzurichten ist, wird ein Punkt vor dem ersten Abschnitt.
-        // Die Felder des Comm Studio (§6.2) stehen dort immer als Text; eine Aktion lösen
+        // Die Felder des JSON-Formats (§6.2) stehen dort immer als Text; eine Aktion lösen
         // sie nur aus, wenn die Projektdatei unter "abbildung" eine nennt.
         QJsonArray vorbereitung;
         QStringList texte;
@@ -418,7 +418,7 @@ namespace sichttest
         {
             QJsonObject s = v.toObject();
             if (istVorbereitung(s)) macheZurVorbereitung(s);
-            // "tab" und "restart" des Comm Studio: mit Abbildung eine Aktion, sonst nur Anzeige.
+            // "tab" und "restart": mit Abbildung eine Aktion, sonst nur Anzeige.
             QJsonArray aktionen = s.value(QStringLiteral("aktionen")).toArray();
             const QString tab = s.value(QStringLiteral("tab")).toString();
             if (!tab.isEmpty())
@@ -486,8 +486,8 @@ namespace sichttest
             const QJsonObject s = v.toObject();
             alt.insert(s.value(QStringLiteral("id")).toString(), s);
         }
-        // Der Build hängt am Urteil (§14.1): ein Urteil ohne eigenen Stempel — aus einem Lauf
-        // vor v0.4.0 oder aus dem Comm Studio — bekommt den, den der Lauf bis hierher nannte.
+        // Der Build hängt am Urteil (§6.4): ein Urteil ohne eigenen Stempel — aus einem Lauf
+        // vor v0.4.0 oder von einem älteren Tester — bekommt den, den der Lauf bis hierher nannte.
         const QJsonObject laufBuild = log.value(QStringLiteral("build")).toObject();
         const bool laufBuildDa = !laufBuild.value(QStringLiteral("exe")).toString().isEmpty()
                                  || !laufBuild.value(QStringLiteral("exe_timestamp")).toString().isEmpty();
@@ -505,7 +505,7 @@ namespace sichttest
             inDerListe.insert(s.value(QStringLiteral("id")).toString());
             const auto it = alt.constFind(s.value(QStringLiteral("id")).toString());
             if (it == alt.constEnd()) continue;
-            // history: das Befund-Archiv des Comm Studio — wird mitgeführt, damit alte Läufe ganz bleiben.
+            // history: das Befund-Archiv (§6.8) — wird mitgeführt, damit alte Läufe ganz bleiben.
             for (const char* feld : { "result", "remark", "screenshots", "rated", "rated_at", "actions", "history", "build" })
                 if (it->contains(QLatin1String(feld)))
                     s.insert(QLatin1String(feld), it->value(QLatin1String(feld)));
@@ -578,7 +578,7 @@ namespace sichttest
                 { QStringLiteral("result"), von.value(QStringLiteral("result")).toString() },
                 { QStringLiteral("remark"), von.value(QStringLiteral("remark")).toString() },
                 { QStringLiteral("screenshots"), bilder } };
-            // Über das Format des Comm Studio hinaus: wann und gegen welchen Build geurteilt wurde.
+            // Über das ursprüngliche Format hinaus: wann und gegen welchen Build geurteilt wurde.
             for (const char* feld : { "rated", "rated_at", "build" })
                 if (von.contains(QLatin1String(feld)))
                     eintrag.insert(QLatin1String(feld), von.value(QLatin1String(feld)));
@@ -715,7 +715,7 @@ namespace sichttest
         liste(QStringLiteral("open"), QStringLiteral("○ Offen"));
         liste(QStringLiteral("pass"), QStringLiteral("✓ Pass"));
 
-        // Befund-Archiv (§14.1 Teil D): frühere Befunde je Schritt, der jüngste zuerst.
+        // Befund-Archiv (§6.8): frühere Befunde je Schritt, der jüngste zuerst.
         bool erster = true;
         for (const QJsonValue& v : protokoll.schritte)
         {

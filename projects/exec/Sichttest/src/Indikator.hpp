@@ -3,7 +3,7 @@
 // (Ergebnis-DB der Ablage), der Hand-Schicht der Gewichtung (weight, changed,
 // retest_steps) und der git-Schicht (jüngster Commit je Area).
 //
-// Die Rechnung ist die des Comm Studio (TestProtokollWindow.cpp:1020–1119).
+// Die Rechnung beschreibt die Spezifikation §6.7.
 
 #pragma once
 

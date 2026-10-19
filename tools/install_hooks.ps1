@@ -2,7 +2,6 @@
 # install_hooks.ps1 - git-Hooks fuer die git-Schicht des Nachtest-Indikators
 # =============================================================================
 # Teil des Werkzeugs Sichttest (docs/Specification.md, Abschnitt 6.7).
-# Herkunft: Comm Studio, tools/install_hooks.ps1.
 #
 # Im Repo der Anwendung aufrufen. Schreibt .git/hooks/post-commit und
 # post-merge; beide rufen gewichtung_autoupdate.py aus DIESEM Ordner. Hooks

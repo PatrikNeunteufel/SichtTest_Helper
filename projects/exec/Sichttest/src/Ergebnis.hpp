@@ -3,8 +3,8 @@
 // gespiegelt wird. Das Testlog bleibt die Wahrheit; die DB ist der Index über
 // alle Läufe und Builds — für die Statistik und den Nachtest-Indikator.
 //
-// Das Schema ist das des Comm Studio (testlauf, testschritt, protokoll). Zwei
-// Dinge sind anders: `log_datei` trägt den Dateinamen ohne Ordner, und
+// Tabellen testlauf, testschritt, protokoll; Spalten werden nur ergänzt. Zwei
+// Dinge gegenüber dem ursprünglichen Schema: `log_datei` trägt den Dateinamen ohne Ordner, und
 // `testschritt` hat ergänzte Spalten für den Build am Urteil und seinen Zeitpunkt.
 
 #pragma once

@@ -1,6 +1,6 @@
 // GegenprobeQt — kleine Qt-Anwendung für den Selbsttest. Sie benutzt
-// sichttest_steuerung_qt.hpp so, wie es LumiViz und das Comm Studio tun
-// werden: Aktionen als Lambdas mit QJsonObject, Zustellung im GUI-Thread.
+// sichttest_steuerung_qt.hpp so, wie es eine geprüfte Qt-Anwendung
+// tut: Aktionen als Lambdas mit QJsonObject, Zustellung im GUI-Thread.
 //
 // Aufruf:  GegenprobeQt <dll>
 //          Exit = gescheiterte Prüfungen. Läuft, bis der Tester »ende« ruft.

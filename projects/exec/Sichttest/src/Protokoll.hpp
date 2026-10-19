@@ -1,8 +1,8 @@
-// Sichttest — Protokoll und Testlog (S93).
+// Sichttest — Protokoll und Testlog.
 //
 // Ein Protokoll ist eine Liste von Schritten. Es kommt aus einer Markdown-
 // Checkliste (`- [ ] **A1 Titel:** Text`, Abschnitte als `## …`) oder aus einer
-// `*.testprotokoll.json` (Format des UART-Testers: title, description, steps
+// `*.testprotokoll.json` (Spezifikation §6.2: title, description, steps
 // mit id / section / title / text).
 //
 // Ein Punkt kann Aktionen tragen, die das Werkzeug in der geprüften Anwendung
@@ -11,7 +11,7 @@
 // Titel mit »Vorbereiten« beginnt (JSON: "kind": "prep"), ist eine
 // Vorbereitung: er bekommt kein Urteil und zählt nicht mit.
 //
-// Das Testlog (`*.testlog.json`) hat das Format des UART-Testers und wird nach
+// Das Testlog (`*.testlog.json`) hat ein festes Format (Spezifikation §6) und wird nach
 // jeder Bewertung geschrieben; daneben liegt ein Report in Markdown, den ein
 // Mensch und Claude lesen.
 #pragma once
@@ -38,7 +38,7 @@ namespace sichttest
         QJsonObject steuerung; // mit welcher Anwendung und DLL der Lauf lief (Testlog: steuerung, Spezifikation §5)
         QJsonObject build;     // gegen welche Exe der Lauf lief: exe, exe_timestamp (ISO) (Testlog: build)
         QJsonObject zustaende; // was die Anwendung zuletzt gemeldet hat: name -> { steht, text } (Testlog: zustaende)
-        QJsonObject setup;     // Felder des Comm Studio, wie sie in der Liste stehen; gehen
+        QJsonObject setup;     // Felder des JSON-Formats (§6.2), wie sie in der Liste stehen; gehen
         QJsonObject testDb;    // unverändert ins Testlog (test_db.active bleibt aus altem Lauf)
         QStringList hinweise;  // beim Laden bemerkt: Verweis auf unbekannte Kennung, Verweis im Kreis
     };
@@ -57,7 +57,7 @@ namespace sichttest
     Protokoll ausMarkdown(const QString& text, const QString& pfad);
     Protokoll ausJson(const QJsonObject& wurzel, const QString& pfad);
 
-    // --- Aktionen (Spezifikation §6) ----------------------------------------------
+    // --- Aktionen (Spezifikation §6) ----------------------------------------
     // Eine Aktion ist ein Objekt { "aktion": Name, "mit": { Schlüssel: Wert }, "text"?, "frist"? }.
     // Ein Name mit @ davor verweist auf die Aktionen des Punkts mit dieser Kennung.
 
@@ -86,7 +86,7 @@ namespace sichttest
     Zaehler zaehle(const QJsonArray& schritte);
     QString zeichen(const QString& ergebnis);
 
-    // --- Befund-Archiv (Spezifikation §6.8) --------------------------------
+    // --- Befund-Archiv (Spezifikation §6.8) ----------------------------------
     // Bemerkung und Bilder des Schritts wandern mit Zeitpunkt, Urteil und dessen Build nach
     // history[]; das Feld wird frei, das Urteil bleibt. false = es gab nichts zu archivieren.
     // Die Bilddateien bleiben liegen.

@@ -3,8 +3,7 @@
 # gewichtung_autoupdate.py — git-Schicht des Nachtest-Indikators
 # =============================================================================
 # Teil des Werkzeugs Sichttest (docs/Specification.md §6.7).
-# Herkunft: Comm Studio, tools/gewichtung_autoupdate.py (2026-06-12); hier
-# verallgemeinert — die Pfade kommen aus der Projektdatei, nicht aus dem Skript.
+# Die Pfade kommen aus der Projektdatei, nicht aus dem Skript.
 #
 # Läuft als git-Hook (post-commit: der frische Commit; post-merge:
 # ORIG_HEAD..HEAD = der geholte Bereich) und schreibt je Area den jüngsten

@@ -1,6 +1,5 @@
-// Sichttest — eigenständiges Fenster zum Abhaken einer Sichttest-Liste (S93).
+// Sichttest — eigenständiges Fenster zum Abhaken einer Sichttest-Liste.
 //
-// Vorbild ist das Abnahme-Protokoll des UART-Studios (TestProtokollWindow):
 // Schritt für Schritt Pass / Pass mit Befund / Fail / Überspringen, dazu eine
 // Bemerkung und Screenshots aus der Zwischenablage. Hier ohne die Kopplung an
 // eine Anwendung — das Fenster läuft neben dem Programm, das geprüft wird.
@@ -374,7 +373,7 @@ namespace
             linksLay->addWidget(m_liste, 1);
             m_nurOffene = new QCheckBox(QStringLiteral("Nur offene und Fail zeigen"), links);
             linksLay->addWidget(m_nurOffene);
-            // Nachtest-Indikator (§14.1 Teil C): offene Schritte ohne Nachtest-Bedarf überspringen.
+            // Nachtest-Indikator (§6.7): offene Schritte ohne Nachtest-Bedarf überspringen.
             m_autoSkip = new QPushButton(links);
             m_autoSkip->hide();
             linksLay->addWidget(m_autoSkip);
@@ -435,7 +434,7 @@ namespace
             loesche->setShortcutContext(Qt::WidgetShortcut);
             m_bilder->addAction(loesche);
             bildZeile->addWidget(m_bilder, 1);
-            // Befund-Archiv (§14.1 Teil D).
+            // Befund-Archiv (§6.8).
             m_archivBtn = new QPushButton(QStringLiteral("🗄 Archivieren"), rechts);
             m_archivBtn->setToolTip(QStringLiteral(
                 "Heftet Bemerkung und Screenshots mit Zeitpunkt und Urteil in die Historie dieses Schritts "
@@ -537,7 +536,7 @@ namespace
             lay->addWidget(m_endeHinweis);
             connect(endeBtn, &QPushButton::clicked, this, &QWidget::close);
 
-            // Die Anwendung meldet einen Zustand, für den die Liste eine Nachbereitung hat (§14.1):
+            // Die Anwendung meldet einen Zustand, für den die Liste eine Nachbereitung hat (§6.2):
             // eine Zeile mit Knopf, ohne Dialog — auch gleich nach dem Verbinden.
             m_stehtHinweis = new QWidget(this);
             auto* stehtZeile = new QHBoxLayout(m_stehtHinweis);
@@ -882,7 +881,7 @@ namespace
             zeigeStatistik(false);
         }
 
-        // --- Nachtest-Indikator (§14.1 Teil C) ----------------------------------
+        // --- Nachtest-Indikator (§6.7) ------------------------------------------
 
         // Gewichtung des Projekts lesen und je Schritt die Dringlichkeit rechnen. Das letzte
         // Ergebnis je Kennung kommt aus der Ergebnis-DB der Ablage, über alle Listen.
@@ -1011,7 +1010,7 @@ namespace
         }
 
         // Aus dem Ansehen heraus: den Lauf wieder bearbeiten. Auch einen abgeschlossenen — was
-        // dabei überschrieben würde, hebt das Befund-Archiv auf (§14.1 Teil D).
+        // dabei überschrieben würde, hebt das Befund-Archiv auf (§6.8).
         void setzeFort()
         {
             if (!m_nurAnsehen) return;
@@ -1025,7 +1024,7 @@ namespace
             zeigeAutoSkip();
         }
 
-        // --- Statistik (§14.1 Teil B) -------------------------------------------
+        // --- Statistik (§6.6) ---------------------------------------------------
 
         // Eigenes Fenster: Lage, Läufe der Liste, Schritte der Liste. zeigen = false frischt
         // nur auf, wenn es schon offen ist.
@@ -1290,7 +1289,7 @@ namespace
             const QString wann = s.value(QStringLiteral("rated")).toString();
             if (!wann.isEmpty()) t += QStringLiteral(" (%1)").arg(wann);
             t = t.toHtmlEscaped();
-            // Felder des Comm Studio, die zum Handgriff gehören. Der Tab ist ein Link: ein Klick
+            // Felder des JSON-Formats (§6.2), die zum Handgriff gehören. Der Tab ist ein Link: ein Klick
             // tut dasselbe wie `tab:<Titel>` im Text (Wunsch Patrik 2026-10-10).
             const QString tab = s.value(QStringLiteral("tab")).toString();
             if (!tab.isEmpty())
@@ -1352,9 +1351,9 @@ namespace
             const QString alt = s.value(QStringLiteral("remark")).toString();
             const QString neu = m_bemerkung->toPlainText().trimmed();
             if (alt == neu) return false;
-            // Befund-Archiv (§14.1 Teil D): ändert sich der Text eines schon bewerteten Schritts,
+            // Befund-Archiv (§6.8): ändert sich der Text eines schon bewerteten Schritts,
             // wandert der alte Befund samt seinen Bildern erst in die Historie. Ein Unterschied
-            // nur im Rand (Testlog aus dem Comm Studio) ist keine Änderung.
+            // nur im Rand (etwa in einem Testlog eines älteren Testers) ist keine Änderung.
             const QString r = s.value(QStringLiteral("result")).toString();
             const bool archiviert = r != QLatin1String("open") && !istVorbereitung(s) && alt.trimmed() != neu
                                     && archiviere(s);
@@ -1397,7 +1396,7 @@ namespace
                 m_bemerkung->setFocus();
                 return;
             }
-            // Befund-Archiv (§14.1 Teil D): ein Urteil, das einem anderen weicht, bleibt in der
+            // Befund-Archiv (§6.8): ein Urteil, das einem anderen weicht, bleibt in der
             // Historie — auch ohne Bemerkung. Hat die geänderte Bemerkung den alten Befund schon
             // abgeheftet, steht es dort.
             const QString altesUrteil = vorher.value(QStringLiteral("result")).toString();
@@ -1418,7 +1417,7 @@ namespace
                 // Der Zeitpunkt des Urteils mit Jahr: gegen ihn rechnet der Nachtest-Indikator, nicht
                 // gegen den Start des Laufs — ein fortgesetzter Lauf kann Wochen alt sein.
                 s.insert(QStringLiteral("rated_at"), QDateTime::currentDateTime().toString(Qt::ISODate));
-                // Der Build hängt am Urteil (§14.1); an der Wurzel steht der zuletzt benutzte.
+                // Der Build hängt am Urteil (§6.4); an der Wurzel steht der zuletzt benutzte.
                 m_p.build = aktuellerBuild();
                 s.insert(QStringLiteral("build"), m_p.build);
             }
@@ -1553,7 +1552,7 @@ namespace
                       && f.write(QJsonDocument(log).toJson()) >= 0
                       && f.commit();
             }
-            // Die Ergebnis-DB der Ablage spiegelt jeden Stand (§14.1 Teil B). Ein Fehler dort hält
+            // Die Ergebnis-DB der Ablage spiegelt jeden Stand (§6.6). Ein Fehler dort hält
             // nichts an; er steht einmal in der Statuszeile der Aktionen.
             if (gut)
             {
@@ -1589,7 +1588,7 @@ namespace
             m_summe->setToolTip(QDir::toNativeSeparators(reportPfad()));
         }
 
-        // --- Aktionen (Spezifikation §6) ---------------------------------------------
+        // --- Aktionen (Spezifikation §6) ---------------------------------------
 
         struct Lauf
         {
@@ -1665,7 +1664,7 @@ namespace
                 m_p.build = aktuellerBuild();
         }
 
-        // --- Zustände der Anwendung (S 1.1, §14.1 Teil A) -----------------------
+        // --- Zustände der Anwendung (S 1.1, §3) ---------------------------------
 
         QJsonObject gemeldet() const
         {
@@ -2030,7 +2029,7 @@ namespace
                 QJsonObject a = m_lauf.liste.at(m_lauf.pos).toObject();
                 // Aus der Abbildung des Projekts: der vorbelegte Schlüssel "fortgesetzt" sagt der
                 // Anwendung, ob der Lauf schon eine Bewertung trägt (§6.4, §7).
-                // Dasselbe leistet in jeder Aktion der Wert {fortgesetzt} (§14.1).
+                // Dasselbe leistet in jeder Aktion der Wert {fortgesetzt} (§6.2).
                 QJsonObject mit = a.value(QStringLiteral("mit")).toObject();
                 bool gefuellt = false;
                 if (a.contains(QStringLiteral("feld")) && mit.contains(QStringLiteral("fortgesetzt")))
@@ -2228,7 +2227,7 @@ namespace
         }
 
         // Block build im Testlog, ohne Verbindung: Stempel als ISO; ein fortgesetzter Lauf
-        // behält, was sein Testlog nennt (etwa die Debug-Exe eines Laufs aus dem Comm Studio).
+        // behält, was sein Testlog nennt (etwa die Debug-Exe eines Laufs, den ein älterer Tester schrieb).
         void selbsttestBuild(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
         {
             const QString eigene = QDir::fromNativeSeparators(QCoreApplication::applicationFilePath());
@@ -2251,7 +2250,7 @@ namespace
                            .value(QStringLiteral("exe")).toString() == eigene,
                    QStringLiteral("der Build hängt am Urteil: der bewertete Schritt trägt Exe und Stempel"));
 
-            // Ein Lauf wie aus dem Comm Studio: build nur an der Wurzel, dazu ein Urteil zu einem
+            // Ein Lauf wie von einem älteren Tester: build nur an der Wurzel, dazu ein Urteil zu einem
             // Schritt, den die Liste nicht mehr kennt.
             const QJsonObject fremd{ { QStringLiteral("exe"), QStringLiteral("C:/fremd/Debug/app.exe") },
                                      { QStringLiteral("exe_timestamp"), QStringLiteral("2026-09-01T14:14:08") } };
@@ -2292,7 +2291,7 @@ namespace
                    QStringLiteral("verwaistes Urteil: steht mit Bemerkung weiter im Testlog"));
         }
 
-        // Ergebnis-DB, Statistik und das Ansehen eines älteren Laufs (§14.1 Teil B).
+        // Ergebnis-DB, Statistik und das Ansehen eines älteren Laufs (§6.6).
         void selbsttestErgebnis(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
         {
             auto bytes = [](const QString& pfad) {
@@ -2314,7 +2313,7 @@ namespace
                    && letzte.value(QStringLiteral("X9")).buildStempel == QLatin1String("2026-09-01T14:14:08"),
                    QStringLiteral("Ergebnis-DB: ein verwaistes Urteil wird gespiegelt, mit dem Build am Urteil"));
 
-            // 2. Eine DB wie aus dem Comm Studio: volle Pfade, und eine Ablage, die einmal kopiert wurde.
+            // 2. Eine ältere DB: volle Pfade, und eine Ablage, die einmal kopiert wurde.
             ergebnis::schliesse();
             const QString alt = d.filePath(QStringLiteral("db-alt"));
             QDir(alt).removeRecursively();
@@ -2330,12 +2329,12 @@ namespace
                 gut = gut && q.exec(QStringLiteral("CREATE TABLE testschritt (lauf_id INTEGER NOT NULL, step_id TEXT NOT NULL, section TEXT,"
                     " title TEXT, result TEXT, remark TEXT, screenshots TEXT, history TEXT, PRIMARY KEY (lauf_id, step_id))"));
                 gut = gut && q.exec(QStringLiteral("INSERT INTO testlauf (protokoll, log_datei, build_timestamp, started, pass, fail, skip, open, pass_remark) VALUES"
-                    " ('Liste', 'C:/alt/Studio-Testlogs/Liste_20260613-122846.testlog.json', '2026-06-01T08:00:00', '2026-06-13T12:28:46', 2, 0, 0, 5, 0),"
-                    " ('Liste', 'D:/kopie/Studio-Testlogs/Liste_20260613-122846.testlog.json', '2026-06-01T08:00:00', '2026-06-13T12:28:46', 3, 0, 0, 4, 0),"
-                    " ('Liste', 'C:/alt/Studio-Testlogs/Liste_20260901-101010.testlog.json', '2026-09-01T14:14:08', '2026-09-01T10:10:10', 1, 0, 0, 6, 0)"));
+                    " ('Liste', 'C:/alt/Testlogs/Liste_20260613-122846.testlog.json', '2026-06-01T08:00:00', '2026-06-13T12:28:46', 2, 0, 0, 5, 0),"
+                    " ('Liste', 'D:/kopie/Testlogs/Liste_20260613-122846.testlog.json', '2026-06-01T08:00:00', '2026-06-13T12:28:46', 3, 0, 0, 4, 0),"
+                    " ('Liste', 'C:/alt/Testlogs/Liste_20260901-101010.testlog.json', '2026-09-01T14:14:08', '2026-09-01T10:10:10', 1, 0, 0, 6, 0)"));
                 gut = gut && q.exec(QStringLiteral("INSERT INTO testschritt (lauf_id, step_id, result) VALUES"
                     " (1, 'a-01', 'pass'), (2, 'a-01', 'fail'), (3, 'a-02', 'pass')"));
-                pruefe(gut, QStringLiteral("Ergebnis-DB: Bestand wie aus dem Comm Studio angelegt"));
+                pruefe(gut, QStringLiteral("Ergebnis-DB: älterer Bestand mit vollen Pfaden angelegt"));
                 db.close();
             }
             QSqlDatabase::removeDatabase(QStringLiteral("selbsttest_alt"));
@@ -2460,7 +2459,7 @@ namespace
                    QStringLiteral("Ältere Testlogs einlesen: ein zweiter Klick liest nichts doppelt"));
         }
 
-        // Befund-Archiv und das Bearbeiten eines abgeschlossenen Laufs (§14.1 Teil D).
+        // Befund-Archiv und das Bearbeiten eines abgeschlossenen Laufs (§6.8).
         void selbsttestArchiv(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
         {
             const QString liste = d.filePath(QStringLiteral("Archiv.md"));
@@ -2521,7 +2520,7 @@ namespace
             klicke(QStringLiteral("🗄 Archivieren"));
             pruefe(archiv(0).size() == 2, QStringLiteral("Befund-Archiv: ohne Bemerkung und Bild gibt es nichts zu archivieren"));
 
-            // Ein Unterschied nur im Rand ist keine Änderung (Testlog aus dem Comm Studio).
+            // Ein Unterschied nur im Rand ist keine Änderung (etwa im Testlog eines älteren Testers).
             zeige(1);
             m_bemerkung->setPlainText(QStringLiteral("mit Rand"));
             klicke(QStringLiteral("✓ Pass"));
@@ -2590,7 +2589,7 @@ namespace
                    QStringLiteral("Befund-Archiv: ein Urteil ohne Bemerkung bleibt beim Wechsel und beim Zurücknehmen in der Historie"));
         }
 
-        // Nachtest-Indikator, »Unkritische überspringen« und die Listenwahl (§14.1 Teil C).
+        // Nachtest-Indikator, »Unkritische überspringen« und die Listenwahl (§6.7).
         void selbsttestIndikator(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
         {
             // 1. Die Rechnung allein.
@@ -2733,7 +2732,7 @@ namespace
                    QStringLiteral("zu einem Punkt gehört die Vorbereitung seines Abschnitts"));
 
             const QJsonObject wurzel = QJsonDocument::fromJson(QByteArray(R"({
-                "title": "J", "anwendung": "CommStudio",
+                "title": "J", "anwendung": "MyApp",
                 "vorbereitung": [ { "aktion": "datei_oeffnen", "mit": { "pfad": "examples/demo.project.json" },
                                     "text": "Projekt demo öffnen" } ],
                 "nachbereitung": [ { "aktion": "testdb_abbauen" } ],
@@ -2744,7 +2743,7 @@ namespace
                     "aktionen": [ { "aktion": "@db-00" } ] },
                   { "id": "db-02", "section": "B", "title": "Zwei", "text": "…" } ] })")).object();
             const Protokoll j = ausJson(wurzel, d.filePath(QStringLiteral("J.testprotokoll.json")));
-            pruefe(j.schritte.size() == 4 && j.anwendung == QLatin1String("CommStudio") && j.nachbereitung.size() == 1
+            pruefe(j.schritte.size() == 4 && j.anwendung == QLatin1String("MyApp") && j.nachbereitung.size() == 1
                    && istVorbereitung(j.schritte.at(0).toObject()) && istVorbereitung(j.schritte.at(1).toObject())
                    && zaehle(j.schritte).offen == 2,
                    QStringLiteral("JSON: vorbereitung wird ein Punkt vor dem ersten Abschnitt, kind prep zählt nicht mit"));
@@ -2876,7 +2875,7 @@ namespace
             return f.open(QIODevice::WriteOnly) && f.write(inhalt) == inhalt.size();
         }
 
-        // Projektdatei (§7), Felder des Comm Studio (§6.2) und Nachbereitung, gegen die Gegenprobe.
+        // Projektdatei (§7), Felder des JSON-Formats (§6.2) und Nachbereitung, gegen die Gegenprobe.
         // Läuft nach selbsttestAktionen(): das Fenster lauscht schon.
         void selbsttestProjekt(const QDir& d, const Pruefe& pruefe, const std::function<bool(const QString&)>& klicke)
         {
@@ -2888,7 +2887,7 @@ namespace
             QDir(wurzel.absolutePath()).removeRecursively();
 
             // Alle Felder zeigen auf Aktionen der Gegenprobe: echo schickt die Argumente zurück,
-            // ende beendet sie (wie der Neustart des Comm Studio).
+            // ende beendet sie (wie eine Aktion mit STS_BEENDET_ANWENDUNG).
             const QJsonObject projektJson{
                 { QStringLiteral("schema"), 1 },
                 { QStringLiteral("anwendung"), g },
@@ -2897,9 +2896,9 @@ namespace
                       { QStringLiteral("argumente"), QJsonArray{ dll, QStringLiteral("anwendung") } } } },
                 { QStringLiteral("listen"), QJsonArray{
                       QJsonObject{ { QStringLiteral("ordner"), QStringLiteral("listen") },
-                                   { QStringLiteral("ablage"), QStringLiteral("ablage/studio") } },
+                                   { QStringLiteral("ablage"), QStringLiteral("ablage/felder") } },
                       QJsonObject{ { QStringLiteral("ordner"), QStringLiteral("md") },
-                                   { QStringLiteral("muster"), QStringLiteral("Composer_*.md") } },
+                                   { QStringLiteral("muster"), QStringLiteral("Ansicht_*.md") } },
                       QJsonObject{ { QStringLiteral("ordner"), QStringLiteral("fehlt") } } } },
                 { QStringLiteral("abbildung"), QJsonObject{
                       { QStringLiteral("setup.close_all_tabs"), QStringLiteral("echo") },
@@ -2911,19 +2910,19 @@ namespace
                       { QStringLiteral("test_db"), QStringLiteral("stellt_her name seed fortgesetzt") },
                       { QStringLiteral("test_db.ende"), QStringLiteral("raeumt wenn=probe") } } } };
             const QString projektDatei = wurzel.filePath(QStringLiteral(".sichttest/sichttest.projekt.json"));
-            const QString studio = wurzel.filePath(QStringLiteral("listen/studio.testprotokoll.json"));
-            const QString composer = wurzel.filePath(QStringLiteral("md/Composer_1.md"));
+            const QString felder = wurzel.filePath(QStringLiteral("listen/felder.testprotokoll.json"));
+            const QString ansicht = wurzel.filePath(QStringLiteral("md/Ansicht_1.md"));
             bool geschrieben = schreibeDatei(projektDatei, QJsonDocument(projektJson).toJson());
-            geschrieben = geschrieben && schreibeDatei(studio, QByteArray(R"({
-                "title": "Studio", "description": "Felder des Comm Studio",
-                "test_db": { "name": "studiotest", "_hinweis": "Kommentar", "seed": [ { "projekt": "P" } ] },
+            geschrieben = geschrieben && schreibeDatei(felder, QByteArray(R"({
+                "title": "Felder", "description": "Felder des JSON-Formats, die über die abbildung zu Aktionen werden",
+                "test_db": { "name": "meinetestdb", "_hinweis": "Kommentar", "seed": [ { "projekt": "P" } ] },
                 "setup": { "close_all_tabs": true, "open": [ "examples/demo.project.json" ] },
                 "steps": [
                   { "id": "s-00", "kind": "prep", "section": "A", "title": "Vorbereiten", "text": "Tab öffnen.", "areas": ["db"] },
                   { "id": "s-01", "section": "A", "title": "Eins", "tab": "Datenbank", "areas": ["db", "csv"],
                     "text": "Siehe [Tab](tab:Datenbank), [Abfrage](sql:SELECT%20*%20FROM%20t) und [Vorlage](datei:configs/a%20b.json)." },
                   { "id": "s-02", "section": "A", "title": "Zwei", "restart": true, "areas": [], "text": "Neustart." } ] })"));
-            geschrieben = geschrieben && schreibeDatei(composer, "# Composer\n\n- [ ] **C1 Eins:** Text.\n");
+            geschrieben = geschrieben && schreibeDatei(ansicht, "# Ansicht\n\n- [ ] **C1 Eins:** Text.\n");
             geschrieben = geschrieben && schreibeDatei(wurzel.filePath(QStringLiteral("md/Notiz.md")),
                                                        "# Notiz\n\n- [ ] **N1 Eins:** passt nicht auf das Muster.\n");
             pruefe(geschrieben, QStringLiteral("Projekt für den Selbsttest angelegt"));
@@ -2947,19 +2946,19 @@ namespace
             m_projektGenannt.clear();
 
             // Der Ordner einer Liste genügt: die Projektdatei wird aufwärts gefunden.
-            setzeOrdner(wurzel.filePath(QStringLiteral("listen")), studio);
+            setzeOrdner(wurzel.filePath(QStringLiteral("listen")), felder);
             pruefe(projekt().gueltig() && QFileInfo(projekt().pfad) == QFileInfo(projektDatei)
                    && QFileInfo(projekt().root) == QFileInfo(wurzel.absolutePath()),
                    QStringLiteral("Projektdatei vom Listenordner aufwärts in .sichttest gefunden; Root ist der Ordner darüber"));
-            pruefe(m_combo->count() == 2 && m_combo->findData(studio) >= 0 && m_combo->findData(composer) >= 0,
+            pruefe(m_combo->count() == 2 && m_combo->findData(felder) >= 0 && m_combo->findData(ansicht) >= 0,
                    QStringLiteral("Listen aus zwei Ordnern; das Muster gilt, ein fehlender Ordner wird übergangen (gezählt %1)")
                        .arg(m_combo->count()));
             {
-                const int i = m_combo->findData(studio);
+                const int i = m_combo->findData(felder);
                 const QString eintrag = m_combo->itemText(i);
                 const QString tipp = m_combo->itemData(i, Qt::ToolTipRole).toString();
-                pruefe(eintrag.startsWith(QStringLiteral("Studio   ·")) && eintrag.endsWith(QStringLiteral("(studio.testprotokoll.json)"))
-                       && !eintrag.contains(QStringLiteral("listen")) && QDir::fromNativeSeparators(tipp) == QLatin1String("listen/studio.testprotokoll.json"),
+                pruefe(eintrag.startsWith(QStringLiteral("Felder   ·")) && eintrag.endsWith(QStringLiteral("(felder.testprotokoll.json)"))
+                       && !eintrag.contains(QStringLiteral("listen")) && QDir::fromNativeSeparators(tipp) == QLatin1String("listen/felder.testprotokoll.json"),
                        QStringLiteral("Listenwahl: der Titel steht vorn, der Dateiname hinten, der Pfad im Tooltip (»%1«)").arg(eintrag));
             }
             {
@@ -2981,14 +2980,14 @@ namespace
                        QStringLiteral("Schrittliste: der Titel steht vorn, die Kennung dahinter, beide im Tooltip (»%1«)")
                            .arg(zeile ? zeile->text() : QString()));
             }
-            pruefe(QFileInfo(logOrdner(studio)) == QFileInfo(wurzel.filePath(QStringLiteral("ablage/studio")))
-                   && QFileInfo(logOrdner(composer)) == QFileInfo(wurzel.filePath(QStringLiteral("md/sichttest-logs"))),
+            pruefe(QFileInfo(logOrdner(felder)) == QFileInfo(wurzel.filePath(QStringLiteral("ablage/felder")))
+                   && QFileInfo(logOrdner(ansicht)) == QFileInfo(wurzel.filePath(QStringLiteral("md/sichttest-logs"))),
                    QStringLiteral("Ablage je Listenordner; ohne Angabe sichttest-logs neben der Liste"));
 
             const int v0 = findeSchritt(QStringLiteral("V0"));
-            pruefe(m_p.pfad == studio && m_p.anwendung == g && v0 == 0 && m_idx == 0
+            pruefe(m_p.pfad == felder && m_p.anwendung == g && v0 == 0 && m_idx == 0
                    && aktionenVon(m_p, v0).size() == 3 && m_p.nachbereitung.size() == 1
-                   && schritt(v0).value(QStringLiteral("text")).toString().contains(QStringLiteral("Test-DB »studiotest« einrichten"))
+                   && schritt(v0).value(QStringLiteral("text")).toString().contains(QStringLiteral("Test-DB »meinetestdb« einrichten"))
                    && schritt(v0).value(QStringLiteral("text")).toString().contains(QStringLiteral("Öffnen: examples/demo.project.json")),
                    QStringLiteral("test_db und setup werden die Vorbereitung der Liste: Text und drei Aktionen; Anwendung aus dem Projekt"));
             pruefe(aktionenVon(m_p, findeSchritt(QStringLiteral("s-01"))).size() == 1
@@ -2999,11 +2998,11 @@ namespace
             {
                 const Projekt merk = projekt();
                 setzeProjekt({});
-                const Protokoll ohne = lade(studio);
+                const Protokoll ohne = lade(felder);
                 setzeProjekt(merk);
                 pruefe(ohne.schritte.size() == 4 && aktionenVon(ohne, 0).isEmpty() && aktionenVon(ohne, 2).isEmpty()
                        && ohne.nachbereitung.isEmpty()
-                       && ohne.schritte.at(0).toObject().value(QStringLiteral("text")).toString().contains(QLatin1String("studiotest")),
+                       && ohne.schritte.at(0).toObject().value(QStringLiteral("text")).toString().contains(QLatin1String("meinetestdb")),
                        QStringLiteral("ohne Abbildung werden die Felder gelesen und als Text gezeigt, ohne Aktion"));
             }
 
@@ -3030,7 +3029,7 @@ namespace
             warteBis([&] { return !m_lauf.aktiv; }, 15000);
             QJsonArray log = ausgeloest(QStringLiteral("V0"));
             pruefe(log.size() == 3 && status(log, 2) == QLatin1String("ok")
-                   && text(log, 0).contains(QLatin1String("\"projekt\":\"P\"")) && text(log, 0).contains(QLatin1String("studiotest"))
+                   && text(log, 0).contains(QLatin1String("\"projekt\":\"P\"")) && text(log, 0).contains(QLatin1String("meinetestdb"))
                    && text(log, 2).contains(QLatin1String("examples/demo.project.json")),
                    QStringLiteral("Vorbereitung: Test-DB (mit seed) zuerst, dann Tabs schließen, dann öffnen"));
             pruefe(text(log, 0).contains(QLatin1String("\"fortgesetzt\":false"))
@@ -3080,10 +3079,10 @@ namespace
             pruefe(stand(QStringLiteral("probe")) == 0 && m_stehtHinweis->isHidden(),
                    QStringLiteral("Zustand: nach der Nachbereitung steht nichts mehr, die Zeile ist weg"));
             const QJsonObject aufPlatte = leseJson(m_logPfad);
-            pruefe(QFileInfo(m_logPfad).absolutePath() == QFileInfo(wurzel.filePath(QStringLiteral("ablage/studio"))).absoluteFilePath()
+            pruefe(QFileInfo(m_logPfad).absolutePath() == QFileInfo(wurzel.filePath(QStringLiteral("ablage/felder"))).absoluteFilePath()
                    && aufPlatte.value(QStringLiteral("teardown_actions")).toArray().size() == 1
                    && aufPlatte.value(QStringLiteral("setup")).toObject().value(QStringLiteral("close_all_tabs")).toBool()
-                   && aufPlatte.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("name")).toString() == QLatin1String("studiotest")
+                   && aufPlatte.value(QStringLiteral("test_db")).toObject().value(QStringLiteral("name")).toString() == QLatin1String("meinetestdb")
                    && aufPlatte.value(QStringLiteral("steps")).toArray().at(2).toObject().value(QStringLiteral("areas")).toArray().size() == 2,
                    QStringLiteral("Testlog liegt in der Ablage des Projekts und trägt setup, test_db, areas und teardown_actions"));
             pruefe(aufPlatte.value(QStringLiteral("test_db")).toObject().contains(QStringLiteral("active"))
@@ -3146,7 +3145,7 @@ namespace
                 };
                 const QString logVorher = m_logPfad;
                 const QByteArray vorher = bytes(logVorher);
-                setzeOrdner(wurzel.filePath(QStringLiteral("listen")), studio);
+                setzeOrdner(wurzel.filePath(QStringLiteral("listen")), felder);
                 const bool fortgesetzt = m_logPfad == logVorher && hatBewertung() && !vorher.isEmpty();
                 const bool nachOeffnen = bytes(logVorher) == vorher;
                 QProcess wieder;
