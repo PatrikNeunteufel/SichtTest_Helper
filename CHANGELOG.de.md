@@ -14,7 +14,7 @@ eigene Nummern ([Spezifikation §5](docs/Specification.de.md#5-drei-nummern-zwei
   Anwendungen, ein Beispielprojekt in [examples/project/](examples/project/),
   [Veröffentlichen](docs/Releasing.de.md) (ersetzt `docs/GitHub_Einrichtung.md`). `beispiele/`
   heißt jetzt `examples/`.
-- Build: CMakeCraft v0.11.1.
+- Build: CMakeCraft v0.12.0 (MSVC kompiliert parallel mit `/MP8`; der Build mit clang/Ninja bleibt unverändert).
 
 ## v0.4.0 — 2026-10-11 · S 1.1 · P 1.1
 

@@ -13,7 +13,7 @@ own numbers ([Specification §5](docs/Specification.md#5-three-numbers-two-of-th
   [Integration Guide](docs/Integration_Guide.md), [templates/](templates/) for applications, an
   example project in [examples/project/](examples/project/), [Releasing](docs/Releasing.md)
   (replaces `docs/GitHub_Einrichtung.md`). `beispiele/` is now `examples/`.
-- Build: CMakeCraft v0.11.1.
+- Build: CMakeCraft v0.12.0 (MSVC compiles in parallel with `/MP8`; the clang/Ninja build is unchanged).
 
 ## v0.4.0 — 2026-10-11 · S 1.1 · P 1.1
 
