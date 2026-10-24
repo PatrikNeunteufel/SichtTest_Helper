@@ -14,7 +14,7 @@ eigene Nummern ([Spezifikation §5](docs/Specification.de.md#5-drei-nummern-zwei
   Anwendungen, ein Beispielprojekt in [examples/project/](examples/project/),
   [Veröffentlichen](docs/Releasing.de.md) (ersetzt `docs/GitHub_Einrichtung.md`). `beispiele/`
   heißt jetzt `examples/`.
-- Build: CMakeCraft v0.12.0 (MSVC kompiliert parallel mit `/MP8`; der Build mit clang/Ninja bleibt unverändert).
+- Build: CMakeCraft v0.13.1 (MSVC kompiliert parallel mit `/MP8` und mit `/bigobj`; die Konfiguration `Testing` ist optimiert, mit Asserts und Debug-Info). `CMakeLists.txt` ruft jetzt `project(SichtTest_Helper LANGUAGES NONE)` auf, Pflicht seit v0.13.0.
 
 ## v0.4.0 — 2026-10-11 · S 1.1 · P 1.1
 
